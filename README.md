@@ -2,7 +2,7 @@
 
 A first implementation of a Decky Loader plugin for installing and updating World of Warcraft addons from Gaming Mode. React/TypeScript provides the Decky panel; a Python standard-library backend handles CurseForge access and addon files.
 
-**Status:** 23 backend, plugin integration, and packaging tests pass locally; the standalone offline smoke test also passes. The frontend has not been compiled or tested in Decky yet: the development sandbox cannot resolve npm's registry. Live API/download testing also requires an approved CurseForge API key. This is not yet a verified Steam Deck release.
+**Status:** The frontend passes TypeScript checks and builds successfully, and an installable test ZIP can be generated with `npm run package`. The 23 backend, plugin integration, and packaging tests and the offline smoke test have passed. Testing in Decky on a Steam Deck and live CurseForge downloads with an approved API key remain outstanding.
 
 ## Features
 
@@ -31,9 +31,9 @@ python3 scripts/demo_smoke.py
 
 ## GitHub test builds
 
-The **Build CurseDeck** workflow runs on pushes, pull requests, and manual dispatch. It tests the backend on Python 3.9 and 3.13, type-checks and builds the frontend, and uploads **CurseDeck-test-build** containing `CurseDeck.zip` and the npm lockfile generated during the build. No API key or repository secret is needed. This workflow has been prepared locally but has not run yet.
+The **Build CurseDeck** workflow runs on pushes, pull requests, and manual dispatch. It tests the backend on Python 3.9 and 3.13, type-checks and builds the frontend, and uploads **CurseDeck-test-build** containing `CurseDeck.zip` and the committed npm lockfile. No API key or repository secret is needed. Check [GitHub Actions](https://github.com/deegan/cursedeck/actions/workflows/build.yml) for the latest build results.
 
-Download the artifact from a successful Actions run and extract it to obtain the installable ZIP. Commit the generated `package-lock.json` afterward; future runs use `npm ci` when a lockfile exists. Until then dependency resolution is not pinned.
+Download the artifact from a successful Actions run and extract it to obtain the installable ZIP. Builds use `npm ci` with the committed `package-lock.json` to pin dependency versions.
 
 ## Requirements
 
@@ -49,12 +49,12 @@ CurseForge may disallow third-party distribution for individual projects. CurseD
 On a machine with internet access, run from this directory:
 
 ```sh
-npm install
+npm ci
 npm test
 npm run package
 ```
 
-The package command type-checks the frontend, builds it with Decky's Rollup preset, and creates `out/CurseDeck.zip`. Keep the generated `package-lock.json` for reproducible subsequent builds (`npm ci`). No installable ZIP is included until a real build succeeds.
+The package command type-checks the frontend, builds it with Decky's Rollup preset, and creates `out/CurseDeck.zip`. The committed `package-lock.json` pins dependencies for reproducible installs. Build output is excluded from Git; build locally or download a successful GitHub Actions artifact.
 
 Transfer the ZIP to your Steam Deck. Enable developer mode in Decky's settings and use its ZIP installation option to install it. Open CurseDeck in Decky's panel.
 
