@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, TextField, staticClasses } from '@decky/ui';
 import { callable, definePlugin } from '@decky/api';
 import { FaBoxOpen } from 'react-icons/fa';
 
 type Reply<T> = { ok: true; data: T } | { ok: false; error: string };
-type Settings = { path: string; flavor: number; hasKey: boolean };
+type Settings = { path: string; flavor: number; hasKey: boolean; demo: boolean };
 type Edition = { id: number; name: string };
 type Mod = { id: number; name: string; summary: string };
 type Installed = { id: number; name: string; version: string; update: string | null; error: string | null; missing: boolean };
 type Library = { addons: Installed[]; unmanaged: string[] };
+const setDemo = callable<[boolean], Reply<Settings>>('set_demo');
 const status = callable<[], Reply<Settings>>('status');
 const configure = callable<[string, number, string], Reply<Settings>>('configure');
 const editions = callable<[string], Reply<Edition[]>>('editions');
@@ -33,13 +34,16 @@ function Content() {
   const [offset, setOffset] = useState(0);
   const [searched, setSearched] = useState(false);
   const [library, setLibrary] = useState<Library>({ addons: [], unmanaged: [] });
+  const running = useRef(false);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   async function run(label: string, action: () => Promise<void>) {
+    if (running.current) return;
+    running.current = true;
     setBusy(label); setError(''); setNotice('');
     try { await action(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(''); }
+    finally { running.current = false; setBusy(''); }
   }
   useEffect(() => {
     void run('Loading…', async () => {
@@ -61,6 +65,7 @@ function Content() {
   }
   return <>
     <PanelSection>
+      {settings?.demo && <p role="status">Offline demo · sample addons in a temporary installation. Your WoW files are untouched.</p>}
       <DropdownItem label="CurseDeck" selectedOption={tab} disabled={!!busy}
         rgOptions={[{data:'installed',label:'My addons'},{data:'browse',label:'Find addons'},{data:'setup',label:'Setup'}]}
         onChange={(option) => setTab(option.data)} />
@@ -69,6 +74,14 @@ function Content() {
       {notice && <p role="status">{notice}</p>}
     </PanelSection>
     {tab === 'setup' && <PanelSection title="World of Warcraft setup">
+      {button(settings?.demo ? 'Leave offline demo' : 'Try offline demo', async () => {
+        const saved = await unwrap(setDemo(!settings?.demo));
+        setSettings(saved); setPath(saved.path); setFlavor(saved.flavor); setKey('');
+        setTypes([]); setResults([]); setOffset(0); setSearched(false);
+        setLibrary(saved.path ? await unwrap(installed(false)) : {addons:[],unmanaged:[]});
+        setTab(saved.demo ? 'installed' : 'setup');
+      })}
+      {!settings?.demo && <>
       <p>Select the edition folder inside your WoW installation, for example _retail_ or _classic_. Close WoW before changing addons.</p>
       <PanelSectionRow><TextField label="WoW edition folder" value={path} disabled={!!busy}
         onChange={(e) => setPath(e.target.value)} /></PanelSectionRow>
@@ -83,10 +96,11 @@ function Content() {
         setSettings(saved); setKey(''); setResults([]); setSearched(false);
         setLibrary(await unwrap(installed(false))); setTab('installed'); setNotice('Setup saved.');
       }, !path || !flavor)}
+      </>}
     </PanelSection>}
-    {tab === 'browse' && <PanelSection title="Find addons · CurseForge">
+    {tab === 'browse' && <PanelSection title={settings?.demo ? 'Find addons · Offline demo' : 'Find addons · CurseForge'}>
       <PanelSectionRow><TextField label="Addon name" value={query} disabled={!!busy}
-        onChange={(e) => {setQuery(e.target.value); setSearched(false); setResults([]);}} /></PanelSectionRow>
+        onChange={(e) => {setQuery(e.target.value); setOffset(0); setSearched(false); setResults([]);}} /></PanelSectionRow>
       {button('Search', () => browse(0), !settings?.path)}
       {searched && !results.length && <p>No addons found for this search and edition.</p>}
       {results.map(mod => <PanelSection key={mod.id} title={mod.name}>

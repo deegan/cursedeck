@@ -2,7 +2,7 @@
 
 A first implementation of a Decky Loader plugin for installing and updating World of Warcraft addons from Gaming Mode. React/TypeScript provides the Decky panel; a Python standard-library backend handles CurseForge access and addon files.
 
-**Status:** backend tests pass locally. The frontend has not been compiled or tested in Decky yet: the development sandbox cannot resolve npm's registry. Live API/download testing also requires an approved CurseForge API key. This is not yet a verified Steam Deck release.
+**Status:** 23 backend, plugin integration, and packaging tests pass locally; the standalone offline smoke test also passes. The frontend has not been compiled or tested in Decky yet: the development sandbox cannot resolve npm's registry. Live API/download testing also requires an approved CurseForge API key. This is not yet a verified Steam Deck release.
 
 ## Features
 
@@ -14,6 +14,26 @@ A first implementation of a Decky Loader plugin for installing and updating Worl
 - Preserve unmanaged addons and all WTF settings.
 - Verify download lengths and checksums; reject unsafe ZIP entries, symlinks, duplicate paths, oversized archives, and conflicting addon folders.
 - Stage the whole dependency set before replacement and restore replaced folders if a normal filesystem operation fails.
+
+## Try it without an API key
+
+After building and installing the plugin, open **Setup → Try offline demo**. No API key or real WoW installation is needed.
+
+The demo starts with Quest Compass and its required Shared Library installed at version 1.0. Use **Check for updates** and **Update all** to install version 2.0, or search for Raid Notes and install it. Sample downloads pass through the same checksum, extraction, dependency, and replacement code used for real addons. The panel always shows an offline-demo banner.
+
+All demo files live in an isolated temporary directory. **Setup → Leave offline demo** deletes them and restores your saved real setup. Demo mode does not persist across plugin restarts. Re-enter it to start fresh. It never contacts CurseForge or modifies your real WoW installation.
+
+You can exercise the same workflow from a terminal today, without building the frontend:
+
+```sh
+python3 scripts/demo_smoke.py
+```
+
+## GitHub test builds
+
+The **Build CurseDeck** workflow runs on pushes, pull requests, and manual dispatch. It tests the backend on Python 3.9 and 3.13, type-checks and builds the frontend, and uploads **CurseDeck-test-build** containing `CurseDeck.zip` and the npm lockfile generated during the build. No API key or repository secret is needed. This workflow has been prepared locally but has not run yet.
+
+Download the artifact from a successful Actions run and extract it to obtain the installable ZIP. Commit the generated `package-lock.json` afterward; future runs use `npm ci` when a lockfile exists. Until then dependency resolution is not pinned.
 
 ## Requirements
 
@@ -62,6 +82,6 @@ npm run typecheck
 npm run build
 ```
 
-Backend tests use isolated temporary WoW installations and mocked CurseForge responses, never a real game installation. Before release, validate on Decky: controller navigation, password entry, API-key failures, edition selection, real addon/dependency downloads, a second-version update, and SD-card paths. Packaging follows the [official Decky template](https://github.com/SteamDeckHomebrew/decky-plugin-template).
+Backend and plugin integration tests use isolated temporary WoW installations and mocked CurseForge responses, never a real game installation. In this restricted development sandbox, async integration tests were run with selector polling because Unix socket sends (including asyncio thread wakeups) are denied. Production code and the CI test command are unchanged. Before release, validate on Decky: controller navigation, password entry, API-key failures, edition selection, real addon/dependency downloads, a second-version update, and SD-card paths. Packaging follows the [official Decky template](https://github.com/SteamDeckHomebrew/decky-plugin-template).
 
 CurseDeck is an independent project, not affiliated with CurseForge, Overwolf, Blizzard, or Decky Loader.

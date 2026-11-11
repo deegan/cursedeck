@@ -105,6 +105,7 @@ def unpack(data, destination):
             raise UserError('Addon archive is too large to extract safely.')
         seen = set()
         folders = set()
+        spellings = {}
         for entry in entries:
             path = PurePosixPath(entry.filename)
             mode = entry.external_attr >> 16
@@ -113,6 +114,11 @@ def unpack(data, destination):
                     or any(p.startswith('.') for p in path.parts)
                     or stat.S_ISLNK(mode) or (stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR))):
                 raise UserError('Addon contains an unsafe archive path.')
+            for length in range(1, len(path.parts) + 1):
+                prefix = '/'.join(path.parts[:length])
+                previous = spellings.setdefault(prefix.casefold(), prefix)
+                if previous != prefix:
+                    raise UserError('Addon contains conflicting path capitalization.')
             normalized = str(path).casefold()
             if normalized in seen:
                 raise UserError('Addon contains duplicate archive paths.')
@@ -131,8 +137,32 @@ def unpack(data, destination):
         return sorted(folders)
 
 
+
+def validate_registry(state):
+    try:
+        if not isinstance(state['flavor'], int) or not isinstance(state['addons'], dict):
+            raise ValueError()
+        owners = set()
+        for key, addon in state['addons'].items():
+            if str(addon['id']) != key or not isinstance(addon['fileId'], int):
+                raise ValueError()
+            if not isinstance(addon['name'], str) or not isinstance(addon['version'], str):
+                raise ValueError()
+            if not isinstance(addon['folders'], list) or not addon['folders']:
+                raise ValueError()
+            for folder in addon['folders']:
+                if (not isinstance(folder, str) or not folder or folder.startswith('.')
+                        or '/' in folder or '\\' in folder or ':' in folder
+                        or folder.casefold() in owners):
+                    raise ValueError()
+                owners.add(folder.casefold())
+    except (KeyError, TypeError, ValueError):
+        raise UserError('The CurseDeck addon registry is invalid. Restore its backup before continuing.') from None
+
+
 class Manager:
-    def __init__(self, settings_dir):
+    def __init__(self, settings_dir, client_factory=Client):
+        self.client_factory = client_factory
         self.settings_file = Path(settings_dir) / 'settings.json'
         self.lock = threading.RLock()
 
@@ -142,7 +172,7 @@ class Manager:
         return {'path': '', 'flavor': 0, 'key': ''}
 
     def client(self):
-        return Client(self.settings()['key'])
+        return self.client_factory(self.settings()['key'])
 
     def root(self):
         raw = self.settings()['path']
@@ -163,6 +193,7 @@ class Manager:
         if path.is_symlink():
             raise UserError('Refusing a symlinked addon registry.')
         state = json.loads(path.read_text()) if path.exists() else {'flavor': self.settings()['flavor'], 'addons': {}}
+        validate_registry(state)
         if state['flavor'] != self.settings()['flavor']:
             raise UserError('This folder is registered for a different WoW edition. Restore its edition in Setup.')
         return root, state
@@ -171,13 +202,17 @@ class Manager:
         with self.lock:
             previous = self.settings()
             key = key.strip() or previous['key']
-            types = Client(key).api(f'games/{GAME_ID}/version-types')
+            types = self.client_factory(key).api(f'games/{GAME_ID}/version-types')
             if flavor not in [item['id'] for item in types]:
                 raise UserError('Select a WoW edition from the list.')
             root = Path(path).expanduser().resolve()
             if not any((root / exe).is_file() for exe in ('Wow.exe', 'WowClassic.exe')):
                 raise UserError('The chosen folder must contain Wow.exe or WowClassic.exe.')
+            if (root / 'Interface').is_symlink() or (root / 'Interface' / 'AddOns').is_symlink():
+                raise UserError('Symlinked Interface or AddOns folders are not supported.')
             registry = root / 'Interface' / 'AddOns' / '.cursedeck.json'
+            if registry.is_symlink():
+                raise UserError('Refusing a symlinked addon registry.')
             if registry.exists() and json.loads(registry.read_text())['flavor'] != flavor:
                 raise UserError('That folder already uses another edition in CurseDeck.')
             atomic_json(self.settings_file, {'path': str(root), 'flavor': flavor, 'key': key})
@@ -188,7 +223,7 @@ class Manager:
         return {'path': settings['path'], 'flavor': settings['flavor'], 'hasKey': bool(settings['key'])}
 
     def editions(self, key):
-        return Client(key.strip() or self.settings()['key']).api(f'games/{GAME_ID}/version-types')
+        return self.client_factory(key.strip() or self.settings()['key']).api(f'games/{GAME_ID}/version-types')
 
     def search(self, query, index=0):
         settings = self.settings()
@@ -204,7 +239,9 @@ class Manager:
             result = []
             for mod in state['addons'].values():
                 item = dict(mod, update=None, error=None,
-                            missing=any(not (root / f).is_dir() for f in mod['folders']))
+                            missing=any((root / f).is_symlink() or not (root / f).is_dir()
+                                or not any(p.is_file() and p.suffix.lower() == '.toc'
+                                           for p in (root / f).iterdir()) for f in mod['folders']))
                 if check:
                     try:
                         latest = self.client().latest(mod['id'], state['flavor'])

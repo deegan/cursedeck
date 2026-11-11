@@ -141,5 +141,33 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.manager.installed()['addons'][0]['fileId'], 20)
 
 
+    def test_registry_traversal_rejected_before_read_or_install(self):
+        self.manager.install(10)
+        registry = self.addons / '.cursedeck.json'
+        data = json.loads(registry.read_text())
+        data['addons']['10']['folders'] = ['../../outside']
+        atomic_json(registry, data)
+        with self.assertRaisesRegex(UserError, 'registry is invalid'):
+            self.manager.installed()
+        with self.assertRaisesRegex(UserError, 'registry is invalid'):
+            self.manager.install(10)
+
+    def test_archive_parent_case_conflict_rejected(self):
+        data = archive({'Example/Example.toc': '', 'Example/Lib/a.lua': '', 'Example/lib/b.lua': ''})
+        with self.assertRaisesRegex(UserError, 'capitalization'):
+            unpack(data, self.root / 'stage')
+        self.assertFalse((self.root / 'stage').exists())
+
+    def test_configure_rejects_symlink_before_persisting(self):
+        before = self.manager.settings_file.read_bytes()
+        self.addons.rmdir()
+        self.addons.symlink_to(self.root, target_is_directory=True)
+        self.manager.client_factory = lambda key: self.client
+        self.client.api.return_value = [{'id': 517}]
+        with self.assertRaisesRegex(UserError, 'Symlinked'):
+            self.manager.configure(str(self.wow), 517, 'new-key')
+        self.assertEqual(self.manager.settings_file.read_bytes(), before)
+
+
 if __name__ == '__main__':
     unittest.main()
