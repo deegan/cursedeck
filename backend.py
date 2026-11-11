@@ -171,6 +171,10 @@ class Manager:
             return json.loads(self.settings_file.read_text())
         return {'path': '', 'flavor': 0, 'key': ''}
 
+    def discover(self):
+        from discovery import discover_installations
+        return discover_installations()
+
     def client(self):
         return self.client_factory(self.settings()['key'])
 

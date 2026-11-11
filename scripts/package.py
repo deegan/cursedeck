@@ -4,7 +4,7 @@ import zipfile
 import hashlib
 import json
 
-FILES = ('plugin.json', 'package.json', 'main.py', 'backend.py', 'demo.py', 'updates.py', 'README.md', 'dist/index.js')
+FILES = ('plugin.json', 'package.json', 'main.py', 'backend.py', 'demo.py', 'updates.py', 'discovery.py', 'README.md', 'dist/index.js')
 
 
 def package(root):

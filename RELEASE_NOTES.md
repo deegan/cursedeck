@@ -1,13 +1,12 @@
-CurseDeck's first downloadable test release for Decky Loader.
+Find your WoW installation directly from CurseDeck's Setup screen.
 
-- Install and update World of Warcraft addons through CurseForge, including required dependencies.
-- Try the offline demo without an API key or a real WoW installation.
-- Automatically check GitHub for new CurseDeck releases on Decky startup and every six hours.
-- Install future releases from CurseDeck → Plugin updates, using Decky's confirmation dialog, checksum verification, and reload. No manual ZIP downloads after initial installation.
-- Preserve your WoW setup, CurseForge key, and addon registry between plugin updates.
+- Automatically scan on first setup, or select **Find WoW installations** to scan again.
+- Search Steam game folders and all numbered Proton prefixes without relying on a fixed Steam ID.
+- Read Steam's library list to include SD cards and other registered libraries; support native and Flatpak Steam.
+- Display every detected WoW edition with its full path, and collapse duplicate paths.
+- Confirm installations using `Wow.exe` or `WowClassic.exe`; leave the filesystem unchanged during discovery.
+- Keep manual path entry for custom locations, and report incomplete scans.
 
-Download **CurseDeck.zip** below for the initial installation. In Decky settings, enable developer mode and install the ZIP. Open CurseDeck → Setup → Try offline demo to test without credentials.
+Upgrade from v0.2.0 through **CurseDeck → Plugin updates → Check for plugin update → Install**, then confirm Decky's dialog. For a first installation, download **CurseDeck.zip** below.
 
-This is an early test release. Frontend checks, packaging, backend tests, and offline integration tests pass; on-device Decky installation and live CurseForge downloads still need testing. CurseForge browsing/downloads require an approved API key. The updater uses a Decky installer bridge checked against the current Loader source; an unsupported Loader version displays an error instead of attempting a direct file replacement. Updates require Decky's confirmation rather than silent background installation.
-
-`update.json` contains the version, pinned download URL, and SHA-256 checksum used by the in-app updater.
+The frontend build, updater bridge tests, 39 Python tests, and offline smoke test pass. Tests cover arbitrary Proton IDs, SD-card libraries, Flatpak paths, multiple editions, duplicate symlinks, unreadable folders, and scan limits. Steam Deck hardware testing and live CurseForge downloads remain outstanding.

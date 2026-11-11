@@ -64,6 +64,9 @@ class Plugin:
     async def configure(self, path, flavor, key):
         return await self._call('configure', path, flavor, key)
 
+    async def discover(self):
+        return await self._call('discover')
+
     async def editions(self, key):
         return await self._call('editions', key)
 

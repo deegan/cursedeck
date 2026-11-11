@@ -6,6 +6,7 @@ import { FaBoxOpen } from 'react-icons/fa';
 
 type Reply<T> = { ok: true; data: T } | { ok: false; error: string };
 type Settings = { path: string; flavor: number; hasKey: boolean; demo: boolean };
+type Discovery = { installations: {path: string; label: string; source: string}[]; warnings: string[]; limited: boolean };
 type Edition = { id: number; name: string };
 type Mod = { id: number; name: string; summary: string };
 type Installed = { id: number; name: string; version: string; update: string | null; error: string | null; missing: boolean };
@@ -15,6 +16,7 @@ const setUpdateChecks = callable<[boolean], Reply<{automaticChecks: boolean}>>('
 const setDemo = callable<[boolean], Reply<Settings>>('set_demo');
 const status = callable<[], Reply<Settings>>('status');
 const configure = callable<[string, number, string], Reply<Settings>>('configure');
+const discover = callable<[], Reply<Discovery>>('discover');
 const editions = callable<[string], Reply<Edition[]>>('editions');
 const search = callable<[string, number], Reply<Mod[]>>('search');
 const installed = callable<[boolean], Reply<Library>>('installed');
@@ -30,6 +32,7 @@ function Content() {
   const [updateError, setUpdateError] = useState('');
   const [tab, setTab] = useState('installed');
   const [settings, setSettings] = useState<Settings>();
+  const [discovery, setDiscovery] = useState<Discovery>();
   const [path, setPath] = useState('');
   const [key, setKey] = useState('');
   const [flavor, setFlavor] = useState(0);
@@ -62,7 +65,7 @@ function Content() {
       const saved = await unwrap(status());
       setSettings(saved); setPath(saved.path); setFlavor(saved.flavor);
       if (saved.path) setLibrary(await unwrap(installed(false)));
-      else setTab('setup');
+      else { setTab('setup'); setDiscovery(await unwrap(discover())); }
     });
   }, []);
   const button = (label: string, action: () => Promise<void>, disabled = false) => (
@@ -116,6 +119,15 @@ function Content() {
         setTab(saved.demo ? 'installed' : 'setup');
       })}
       {!settings?.demo && <>
+      {button('Find WoW installations', async () => setDiscovery(await unwrap(discover())))}
+      {discovery && <>
+        {discovery.installations.length > 0 ? <DropdownItem label="Detected installations"
+          selectedOption={path} strDefaultLabel="Choose an installation" disabled={!!busy}
+          rgOptions={discovery.installations.map(item => ({data:item.path,label:`${item.label} — ${item.path}`}))}
+          onChange={option => {setPath(option.data); setFlavor(0);}} />
+          : <p>No WoW installations found in Steam libraries. Enter the edition folder below if you installed it elsewhere.</p>}
+        {discovery.warnings.map(warning => <p key={warning}>{warning}</p>)}
+      </>}
       <p>Select the edition folder inside your WoW installation, for example _retail_ or _classic_. Close WoW before changing addons.</p>
       <PanelSectionRow><TextField label="WoW edition folder" value={path} disabled={!!busy}
         onChange={(e) => setPath(e.target.value)} /></PanelSectionRow>
