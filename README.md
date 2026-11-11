@@ -37,11 +37,11 @@ If your installation isn't listed, select **Find WoW installations** to scan aga
 
 Multiple installations of the same edition are numbered, with the selected location shown beneath the dropdown. You can switch installations from Setup at any time.
 
-**My addons** shows the scanned folder and the addons found there. Use **Refresh installed addons** after making changes with another addon manager.
+**My addons** shows the scanned folder and a compact list of addon names and versions. Select an addon to expand its description, folder, and other details. Available updates and issues are marked on the collapsed row. Use **Refresh installed addons** after making changes with another addon manager.
 
 ### Existing addons
 
-Addons already present in your WoW folder appear as **Installed outside CurseDeck**. Their names and versions are available without an API key, and CurseDeck leaves their files in place.
+Addons already present in your WoW folder show **Installed outside CurseDeck** in their expanded details. Their names and versions are available without an API key, and CurseDeck leaves their files in place.
 
 Online updates are available for addons installed through CurseDeck. Existing addons are not automatically matched to CurseForge projects or adopted for updates.
 
@@ -67,7 +67,7 @@ Close WoW before installing or updating addons.
 - **Find addons:** Search by name, browse the results, and select **Install**. CurseDeck also installs required dependencies.
 - **My addons → Check for updates:** Look for newer stable releases of addons managed by CurseDeck.
 - **Update / Update all:** Install an individual update or all available updates.
-- **Repair / reinstall:** Restore the current release of a managed addon.
+- **Repair / reinstall:** Expand a managed addon's details to restore its current release.
 
 CurseDeck checks download integrity and stages addon files before replacing managed folders. Updates preserve your WoW `WTF` settings. Personal changes inside a managed addon's own folder are replaced during updates.
 

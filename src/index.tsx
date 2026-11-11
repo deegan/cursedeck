@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, TextField, ToggleField, staticClasses } from '@decky/ui';
+import { ButtonItem, DialogButton, DropdownItem, PanelSection, PanelSectionRow, TextField, ToggleField, staticClasses } from '@decky/ui';
 import { callable, definePlugin, toaster, openFilePicker, FileSelectionType } from '@decky/api';
 import { PluginUpdate, requestPluginUpdate, deckyInstallerBridge } from './pluginUpdates';
 import { installationOptions } from './installations';
+import { AddonCard } from './AddonCard';
 import { FaBoxOpen } from 'react-icons/fa';
 
 type Reply<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -96,6 +97,9 @@ function Content() {
   async function add(id: number) {
     setLibrary(await unwrap(install(id))); setNotice('Addon and required dependencies installed.');
   }
+  const addonAction = (label: string, id: number) => <DialogButton disabled={!!busy}
+    style={{ width: '100%', minWidth: 0, padding: '6px 8px', fontSize: 13, boxSizing: 'border-box' }}
+    onClick={() => void run(label + '…', () => add(id))}>{label}</DialogButton>;
   return <>
     <PanelSection>
       {settings?.demo && <>
@@ -222,10 +226,11 @@ function Content() {
       {!settings?.demo && (!settings?.hasKey || !settings?.flavor) && <p>Save a CurseForge API key and select your WoW edition in Setup to search online. Existing addons can be viewed without a key in My addons.</p>}
       {button('Search', () => browse(0), !settings?.path || (!settings?.demo && (!settings?.hasKey || !settings?.flavor)))}
       {searched && !results.length && <p>No addons found for this search and edition.</p>}
-      {results.map(mod => <PanelSection key={mod.id} title={mod.name}>
-        <p>{mod.summary}</p>
-        {button(library.addons.some(a => a.id === mod.id) ? 'Update / repair' : 'Install', () => add(mod.id))}
-      </PanelSection>)}
+      {results.length > 0 && <p style={{fontSize:12, color:'#b8bfc9'}}>Select an addon to show its description.</p>}
+      {results.map(mod => <AddonCard key={mod.id} name={mod.name}
+        action={addonAction(library.addons.some(a => a.id === mod.id) ? 'Update / repair' : 'Install', mod.id)}>
+        {mod.summary || 'No description available.'}
+      </AddonCard>)}
       {offset > 0 && button('Previous page', () => browse(offset - 20))}
       {results.length === 20 && button('Next page', () => browse(offset + 20))}
     </PanelSection>}
@@ -246,18 +251,24 @@ function Content() {
         setNotice(`${updates.length} addon(s) updated.`);
       }, !library.addons.some(a => a.update))}
       {!library.addons.length && !library.unmanaged.length && <p>{settings?.path ? 'No addon folders found in this installation. Check the scanned path or choose another WoW edition in Setup.' : 'Choose your WoW installation in Setup, then save the folder to list its addons.'}</p>}
-      {library.addons.map(mod => <PanelSection key={mod.id} title={mod.name}>
-        <p>{mod.version}{mod.missing ? ' · Files missing' : ''}</p>
-        {mod.update && <p>Available: {mod.update}</p>}
-        {mod.error && <p>{mod.error}</p>}
-        {button(mod.update ? 'Update' : 'Repair / reinstall', () => add(mod.id))}
-      </PanelSection>)}
-      {(library.localAddons ?? []).map(addon => <PanelSection key={addon.folder} title={addon.name}>
-        <p>{addon.version ?? 'Version unknown'} · Installed outside CurseDeck</p>
-        <p>Folder: {addon.folder}</p>
-        {addon.notes && <p>{addon.notes}</p>}
-        {addon.error && <p>{addon.error}</p>}
-      </PanelSection>)}
+      {(library.addons.length > 0 || (library.localAddons?.length ?? 0) > 0) &&
+        <p style={{fontSize:12, color:'#b8bfc9'}}>Select an addon to show details.</p>}
+      {library.addons.map(mod => <AddonCard key={mod.id} name={mod.name} version={mod.version}
+        status={[mod.missing && 'Files missing', mod.error && 'Needs attention', mod.update && 'Update available'].filter(Boolean).join(' · ')}
+        warning={mod.missing || !!mod.error}
+        action={mod.update ? addonAction('Update', mod.id) : undefined}>
+        <div>Managed by CurseDeck</div>
+        {mod.update && <div style={{marginTop:6}}>Available: {mod.update}</div>}
+        {mod.error && <div style={{marginTop:6, color:'#ffb4a9'}}>{mod.error}</div>}
+        {!mod.update && <div style={{marginTop:8}}>{addonAction('Repair / reinstall', mod.id)}</div>}
+      </AddonCard>)}
+      {(library.localAddons ?? []).map(addon => <AddonCard key={addon.folder} name={addon.name} version={addon.version}
+        status={addon.error ? 'Needs attention' : undefined} warning={!!addon.error}>
+        <div>Installed outside CurseDeck</div>
+        <div style={{marginTop:6}}>Folder: {addon.folder}</div>
+        {addon.notes && <div style={{marginTop:6}}>{addon.notes}</div>}
+        {addon.error && <div style={{marginTop:6, color:'#ffb4a9'}}>{addon.error}</div>}
+      </AddonCard>)}
       {!!library.unmanaged.length && <p>Existing addons are listed from disk. Automatic update matching for these addons is not available yet.</p>}
     </PanelSection>}
   </>;
