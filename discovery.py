@@ -26,7 +26,7 @@ def library_paths(text):
                 yield Path(value)
 
 
-def discover_installations(home=None, max_dirs=20000, timeout=8, clock=time.monotonic):
+def discover_installations(home=None, max_dirs=20000, timeout=8, clock=time.monotonic, mount_roots=None, selected_root=None):
     home = Path(home) if home is not None else Path.home()
     deadline = clock() + timeout
     libraries, seen_libraries = [], set()
@@ -71,6 +71,21 @@ def discover_installations(home=None, max_dirs=20000, timeout=8, clock=time.mono
         queue.append((library / 'steamapps/common', 0, 'Steam library', 7))
         # Scan just the prefix layout, not unrelated Steam shader/download data.
         queue.append((library / 'steamapps/compatdata', 0, 'Proton prefix', 10))
+    if mount_roots is None:
+        mount_roots = [Path('/run/media') / home.name, Path('/media') / home.name]
+        # Older SteamOS mounts the SD card directly below /run/media.
+        media = Path('/run/media')
+        try:
+            if media.is_dir():
+                mount_roots.extend(p for p in media.iterdir() if p.is_dir() and os.path.ismount(p))
+        except OSError:
+            warnings.add('Some mounted drives could not be inspected.')
+    for root in mount_roots:
+        queue.append((Path(root), 0, 'Mounted drive', 14))
+    for root in (home / 'Games', home / 'games', home / 'World of Warcraft', home / '.wine/drive_c'):
+        queue.append((root, 0, 'Game folder', 10))
+    if selected_root is not None:
+        queue = deque([(Path(selected_root), 0, 'Selected folder', 14)])
     seen = set()
     found = {}
     while queue:
@@ -101,7 +116,7 @@ def discover_installations(home=None, max_dirs=20000, timeout=8, clock=time.mono
                 if lower in SKIP or lower.startswith('.') or lower in {'dosdevices', 'drive_z'}:
                     continue
                 # Follow named WoW links, but never generic prefix links into the host filesystem.
-                if entry.is_symlink() and lower not in {'world of warcraft', 'wow', *EDITION_LABELS}:
+                if entry.is_symlink() and lower not in {'world of warcraft', 'wow', 'pfx', 'drive_c', *EDITION_LABELS}:
                     continue
                 if entry.is_dir():
                     # Within compatdata only enter numeric IDs, then pfx, then drive_c.
@@ -118,4 +133,4 @@ def discover_installations(home=None, max_dirs=20000, timeout=8, clock=time.mono
     if limited:
         warnings.add('The scan reached its limit. You can enter a missing installation path manually.')
     return {'installations': sorted(found.values(), key=lambda item: (item['label'], item['path'])),
-            'warnings': sorted(warnings), 'limited': limited}
+            'warnings': sorted(warnings), 'limited': limited, 'scannedDirectories': count}

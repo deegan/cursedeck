@@ -67,8 +67,8 @@ class Plugin:
     async def configure(self, path, flavor, key):
         return await self._call('configure', path, flavor, key)
 
-    async def discover(self):
-        return await self._call('discover')
+    async def discover(self, path=''):
+        return await self._call('discover', path)
 
     async def editions(self, key):
         return await self._call('editions', key)
@@ -97,3 +97,20 @@ class Plugin:
             return {'ok': True, 'data': result}
         except Exception:
             return {'ok': False, 'error': 'Could not save update preferences.'}
+
+    async def plugin_update_status(self):
+        return {'ok': True, 'data': await asyncio.to_thread(self.updater.status)}
+
+    async def prepare_plugin_update(self):
+        try:
+            result = await asyncio.to_thread(self.updater.prepare)
+            decky.logger.info('Prepared verified CurseDeck update %s for Decky installation', result['version'])
+            return {'ok': True, 'data': result}
+        except UserError as error:
+            return {'ok': False, 'error': str(error)}
+        except Exception:
+            decky.logger.exception('Could not prepare plugin update')
+            return {'ok': False, 'error': 'Could not stage the update. Check disk space and plugin logs.'}
+
+    async def update_handoff_failed(self, message):
+        return {'ok': True, 'data': await asyncio.to_thread(self.updater.handoff_failed, message)}

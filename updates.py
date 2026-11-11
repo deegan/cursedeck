@@ -1,6 +1,12 @@
 """Public GitHub release checks. Installation is delegated to Decky Loader."""
 import json
-from pathlib import Path
+import hashlib
+import io
+import os
+import stat
+import tempfile
+import zipfile
+from pathlib import Path, PurePosixPath
 import re
 import threading
 import time
@@ -47,9 +53,63 @@ class ReleaseUpdater:
         self.current = current_version
         version_tuple(current_version)
         self.fetch = fetch
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.cached = None
         self.checked_at = 0
+        self.attempt_path = Path(settings_dir) / 'update-attempt.json'
+
+    def attempt(self):
+        if not self.attempt_path.exists():
+            return None
+        attempt = json.loads(self.attempt_path.read_text())
+        if version_tuple(self.current) >= version_tuple(attempt['target']):
+            return dict(attempt, status='installed', message=f"Installed CurseDeck {self.current}.")
+        return attempt
+
+    def status(self):
+        with self.lock:
+            return dict(self.cached or self.empty(), **self.preferences(), lastAttempt=self.attempt())
+
+    def prepare(self, download=None):
+        with self.lock:
+            update = self.check(force=True)
+            if not update['available']:
+                raise UserError('No newer CurseDeck release is available.')
+            try:
+                data = (download or download_package)(update['artifact'])
+                if hashlib.sha256(data).hexdigest() != update['sha256']:
+                    raise UserError('The update checksum did not match. The installed plugin was not changed.')
+                validate_package(data, update['version'])
+                folder = self.path.parent / 'update-cache' / (update['version'] + '-' + update['sha256'])
+                folder.mkdir(parents=True, exist_ok=True)
+                fd, temporary = tempfile.mkstemp(dir=folder)
+                try:
+                    with os.fdopen(fd, 'wb') as out:
+                        out.write(data)
+                        out.flush()
+                        os.fsync(out.fileno())
+                    destination = folder / 'CurseDeck.zip'
+                    os.replace(temporary, destination)
+                finally:
+                    if os.path.exists(temporary):
+                        os.unlink(temporary)
+                atomic_json(self.attempt_path, {'target':update['version'], 'status':'pending',
+                    'message':f"Update to {update['version']} prepared. Confirm Decky's dialog. If this version remains after installation, the update did not complete.",
+                    'time':time.time()})
+                # Decky's file:// installer strips the prefix without URL-decoding.
+                return dict(update, installArtifact='file://' + str(destination.resolve()))
+            except Exception as error:
+                atomic_json(self.attempt_path, {'target':update['version'], 'status':'failed',
+                    'message':str(error) if isinstance(error, UserError) else 'Could not stage the update package. Check disk space and plugin logs.',
+                    'time':time.time()})
+                raise
+
+    def handoff_failed(self, message):
+        with self.lock:
+            attempt = self.attempt()
+            if attempt and attempt['status'] != 'installed':
+                atomic_json(self.attempt_path, dict(attempt, status='failed', message=str(message)[:500]))
+            return self.status()
 
     def preferences(self):
         if self.path.exists():
@@ -66,7 +126,7 @@ class ReleaseUpdater:
             prefs = self.preferences()
             if not force and (not prefs['automaticChecks'] or
                               (self.cached is not None and time.monotonic() - self.checked_at < 6 * 3600)):
-                return dict(self.cached or self.empty(), **prefs)
+                return dict(self.cached or self.empty(), **prefs, lastAttempt=self.attempt())
             release = self.fetch(RELEASE_API)
             result = self.empty()
             if release is not None:
@@ -94,8 +154,48 @@ class ReleaseUpdater:
             result['checked'] = True
             self.cached = result
             self.checked_at = time.monotonic()
-            return dict(result, **prefs)
+            return dict(result, **prefs, lastAttempt=self.attempt())
 
     def empty(self):
         return {'current': self.current, 'available': False, 'version': None,
                 'artifact': None, 'sha256': None, 'checked': False}
+
+
+def download_package(url):
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent':'CurseDeck-Updater'}), timeout=45) as response:
+            data = response.read(32 * 1024 * 1024 + 1)
+        if len(data) > 32 * 1024 * 1024:
+            raise UserError('The plugin update exceeds the supported download size.')
+        return data
+    except (urllib.error.URLError, TimeoutError):
+        raise UserError('Could not download the plugin update. Check your connection and retry.') from None
+
+
+def validate_package(data, version):
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            entries = archive.infolist()
+            if len(entries) > 2000 or sum(e.file_size for e in entries) > 64 * 1024 * 1024:
+                raise UserError('The update archive is too large.')
+            seen = set()
+            for entry in entries:
+                path = PurePosixPath(entry.filename)
+                if (not path.parts or path.parts[0] != 'CurseDeck' or path.is_absolute()
+                        or '..' in path.parts or '\\' in entry.filename or ':' in entry.filename
+                        or stat.S_ISLNK(entry.external_attr >> 16)
+                        or str(path).casefold() in seen):
+                    raise UserError('The update archive contains unsafe or duplicate paths.')
+                seen.add(str(path).casefold())
+            required = {'CurseDeck/plugin.json', 'CurseDeck/package.json', 'CurseDeck/main.py',
+                        'CurseDeck/backend.py', 'CurseDeck/dist/index.js'}
+            if not required.issubset(set(archive.namelist())):
+                raise UserError('The update is missing required plugin files.')
+            if json.loads(archive.read('CurseDeck/package.json')).get('version') != version:
+                raise UserError('The downloaded package version does not match the release.')
+            if json.loads(archive.read('CurseDeck/plugin.json')).get('name') != 'CurseDeck':
+                raise UserError('The downloaded package is not CurseDeck.')
+            if archive.testzip() is not None:
+                raise UserError('The update archive is corrupt.')
+    except (zipfile.BadZipFile, ValueError, KeyError) as error:
+        raise UserError('The downloaded plugin package is invalid.') from error

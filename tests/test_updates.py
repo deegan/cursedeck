@@ -80,3 +80,57 @@ class ReleaseUpdateTests(unittest.TestCase):
         settings.write_text(json.dumps({'key':'private'}))
         self.updater.set_automatic_checks(False)
         self.assertEqual(json.loads(settings.read_text()), {'key':'private'})
+
+
+class PrepareUpdateTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='with spaces ')
+        self.addCleanup(self.temp.cleanup)
+        self.updater = ReleaseUpdater(self.temp.name, '0.2.0')
+        self.update = dict(manifest(), available=True, current='0.2.0')
+        self.updater.check = Mock(return_value=self.update)
+
+    def package(self, version='0.3.0', extra=None):
+        import io, zipfile
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, 'w') as archive:
+            files = {'CurseDeck/package.json':json.dumps({'version':version}),
+                     'CurseDeck/plugin.json':json.dumps({'name':'CurseDeck'}),
+                     'CurseDeck/main.py':'', 'CurseDeck/backend.py':'', 'CurseDeck/dist/index.js':''}
+            files.update(extra or {})
+            for name, data in files.items(): archive.writestr(name, data)
+        return stream.getvalue()
+
+    def prepare(self, data):
+        import hashlib
+        self.update['sha256'] = hashlib.sha256(data).hexdigest()
+        return self.updater.prepare(download=lambda url:data)
+
+    def test_download_validated_before_local_handoff(self):
+        data = self.package()
+        prepared = self.prepare(data)
+        artifact = Path(prepared['installArtifact'][7:])
+        self.assertEqual(artifact.read_bytes(), data)
+        self.assertEqual(self.updater.attempt()['status'], 'pending')
+        self.assertEqual(ReleaseUpdater(self.temp.name, '0.2.0').status()['lastAttempt']['status'], 'pending')
+        self.assertEqual(ReleaseUpdater(self.temp.name, '0.3.0').status()['lastAttempt']['status'], 'installed')
+
+    def test_bad_hash_does_not_stage_package(self):
+        with self.assertRaisesRegex(UserError, 'checksum'):
+            self.updater.prepare(download=lambda url:self.package())
+        self.assertFalse((Path(self.temp.name)/'update-cache').exists())
+        self.assertEqual(self.updater.attempt()['status'], 'failed')
+
+    def test_wrong_version_and_unsafe_archives_are_rejected(self):
+        for data in (self.package('0.2.0'), self.package(extra={'CurseDeck/../../evil':'bad'}),
+                     self.package(extra={'AnotherPlugin/file':'bad'}), b'not a zip'):
+            with self.subTest(data=data[:10]), self.assertRaises(UserError):
+                self.prepare(data)
+        self.assertFalse((Path(self.temp.name)/'update-cache').exists())
+
+    def test_handoff_failure_survives_reload(self):
+        self.prepare(self.package())
+        self.updater.handoff_failed('Decky connection lost')
+        attempt = ReleaseUpdater(self.temp.name,'0.2.0').status()['lastAttempt']
+        self.assertEqual(attempt['status'], 'failed')
+        self.assertEqual(attempt['message'], 'Decky connection lost')

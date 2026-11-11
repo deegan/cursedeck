@@ -1,23 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
 import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, TextField, ToggleField, staticClasses } from '@decky/ui';
-import { callable, definePlugin, toaster } from '@decky/api';
+import { callable, definePlugin, toaster, openFilePicker, FileSelectionType } from '@decky/api';
 import { PluginUpdate, requestPluginUpdate, deckyInstallerBridge } from './pluginUpdates';
 import { installationOptions } from './installations';
 import { FaBoxOpen } from 'react-icons/fa';
 
 type Reply<T> = { ok: true; data: T } | { ok: false; error: string };
 type Settings = { path: string; flavor: number; hasKey: boolean; demo: boolean };
-type Discovery = { installations: {path: string; label: string; source: string}[]; warnings: string[]; limited: boolean };
+type Discovery = { installations: {path: string; label: string; source: string}[]; warnings: string[]; limited: boolean; scannedDirectories?: number };
 type Edition = { id: number; name: string };
 type Mod = { id: number; name: string; summary: string };
 type Installed = { id: number; name: string; version: string; update: string | null; error: string | null; missing: boolean };
 type Library = { addons: Installed[]; unmanaged: string[]; path?: string; localAddons?: {folder: string; name: string; version: string | null; notes: string; error: string | null}[] };
+const handoffFailed = callable<[string], Reply<PluginUpdate>>('update_handoff_failed');
+const updateStatus = callable<[], Reply<PluginUpdate>>('plugin_update_status');
+const preparePluginUpdate = callable<[], Reply<PluginUpdate>>('prepare_plugin_update');
 const checkPluginUpdate = callable<[boolean], Reply<PluginUpdate>>('check_plugin_update');
 const setUpdateChecks = callable<[boolean], Reply<{automaticChecks: boolean}>>('set_update_checks');
 const setDemo = callable<[boolean], Reply<Settings>>('set_demo');
 const status = callable<[], Reply<Settings>>('status');
 const configureLocal = callable<[string], Reply<Settings>>('configure_local');
 const configure = callable<[string, number, string], Reply<Settings>>('configure');
+const discoverIn = callable<[string], Reply<Discovery>>('discover');
 const discover = callable<[], Reply<Discovery>>('discover');
 const editions = callable<[string], Reply<Edition[]>>('editions');
 const search = callable<[string, number], Reply<Mod[]>>('search');
@@ -58,7 +62,10 @@ function Content() {
   }
   useEffect(() => {
     let active = true;
-    void unwrap(checkPluginUpdate(false)).then(result => {
+    void unwrap(updateStatus()).then(result => {
+      if (active) setPluginUpdate(result);
+      return unwrap(checkPluginUpdate(false));
+    }).then(result => {
       if (active) setPluginUpdate(result);
     }).catch(error => { if (active) setUpdateError(String(error)); });
     return () => { active = false; };
@@ -119,6 +126,7 @@ function Content() {
       <p>Installed: {pluginUpdate?.current ?? 'Loading…'}</p>
       <p>Updates download and install here through Decky. Confirm its installation dialog when prompted.</p>
       {updateError && <p role="alert">{updateError}</p>}
+      {pluginUpdate?.lastAttempt && <p role="status">{pluginUpdate.lastAttempt.message}</p>}
       {pluginUpdate && <ToggleField label="Automatically check for releases"
         description="Check when Decky loads and every six hours while Steam is running."
         checked={pluginUpdate.automaticChecks} disabled={!!busy}
@@ -132,7 +140,14 @@ function Content() {
         if (!update.available) setNotice('You have the latest published CurseDeck release.');
       })}
       {pluginUpdate?.available && button(`Install CurseDeck ${pluginUpdate.version}`, async () => {
-        await requestPluginUpdate(pluginUpdate, deckyInstallerBridge());
+        const prepared = await unwrap(preparePluginUpdate());
+        setPluginUpdate(await unwrap(updateStatus()));
+        try { await requestPluginUpdate(prepared, deckyInstallerBridge()); }
+        catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setPluginUpdate(await unwrap(handoffFailed(message)));
+          throw error;
+        }
         setNotice('Confirm the update in Decky’s installation dialog.');
       })}
     </PanelSection>}
@@ -154,7 +169,22 @@ function Content() {
         onChange={option => {setPath(option.data); setFlavor(0);}} />
       {choices.length > 1 && path && <p style={{overflowWrap:'anywhere'}}>Location: {path}</p>}
       {button('Find WoW installations', () => scanInstallations())}
-      {discovery && !discovery.installations.length && <p>No installations found. Check that your game drive is connected and scan again, or use a custom location below.</p>}
+      {button('Browse SD card or game folder', async () => {
+        let selected;
+        try { selected = await openFilePicker(FileSelectionType.FOLDER, path || '/run/media', false, true); }
+        catch (error) {
+          if (String(error).toLowerCase().includes('cancel')) return;
+          throw error;
+        }
+        if (!selected?.path && !selected?.realpath) return;
+        const found = await unwrap(discoverIn(selected.realpath || selected.path));
+        setDiscovery(found);
+        if (found.installations.length === 1) { setPath(found.installations[0].path); setFlavor(0); }
+        else if (found.installations.length > 1) { setPath(''); setFlavor(0); }
+        if (!found.installations.length) setNotice('No WoW executable found in that folder. Select the World of Warcraft folder or the card containing it.');
+      })}
+      {discovery?.scannedDirectories !== undefined && <p>Checked {discovery.scannedDirectories} folders.</p>}
+      {discovery && !discovery.installations.length && <p>No installations found. Check that your SD card is mounted, or use Browse SD card or game folder to select its location.</p>}
       {discovery?.warnings.map(warning => <p key={warning}>{warning}</p>)}
       <ToggleField label="Use a custom location" description="Advanced: for installations the scan cannot find."
         checked={manualPath} disabled={!!busy} onChange={enabled => {

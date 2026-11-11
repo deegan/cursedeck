@@ -21,7 +21,7 @@ class DiscoveryTests(unittest.TestCase):
         return folder
 
     def scan(self, **kwargs):
-        return discover_installations(self.home, **kwargs)
+        return discover_installations(self.home, mount_roots=kwargs.pop('mount_roots', []), **kwargs)
 
     def test_common_and_arbitrary_proton_ids_and_multiple_editions(self):
         direct = self.wow(self.steam / 'steamapps/common')
@@ -96,3 +96,25 @@ class DiscoveryTests(unittest.TestCase):
     def test_vdf_comments_and_escaped_paths(self):
         text = '// "path" "/fake"\n"path" "/mnt/Steam Library"\n"path" "/mnt/with\\\"quote"'
         self.assertEqual(list(library_paths(text)), [Path('/mnt/Steam Library'), Path('/mnt/with"quote')])
+
+    def test_battlenet_wow_directly_on_unregistered_sd_card(self):
+        card = self.home / 'media/deck/My SD Card'
+        retail = self.wow(card)
+        classic = self.wow(card, '_classic_', 'WowClassic.exe')
+        result = self.scan(mount_roots=[card.parent])
+        self.assertEqual({r['path'] for r in result['installations']}, {str(retail), str(classic)})
+
+    def test_games_folder_and_selected_parent(self):
+        game = self.wow(self.home / 'Games/battlenet/drive_c/Program Files (x86)')
+        self.assertIn(str(game), {r['path'] for r in self.scan()['installations']})
+        other = self.wow(self.home / 'custom-card-location')
+        result = self.scan(selected_root=other.parent)
+        self.assertEqual([r['path'] for r in result['installations']], [str(other)])
+
+    def test_linked_proton_prefix(self):
+        target = self.home / 'moved-prefix'
+        game = self.wow(target / 'drive_c/Games')
+        prefix = self.steam / 'steamapps/compatdata/12345'
+        prefix.mkdir(parents=True)
+        (prefix / 'pfx').symlink_to(target, target_is_directory=True)
+        self.assertEqual(self.scan()['installations'][0]['path'], str(game))

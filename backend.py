@@ -171,8 +171,13 @@ class Manager:
             return json.loads(self.settings_file.read_text())
         return {'path': '', 'flavor': 0, 'key': ''}
 
-    def discover(self):
+    def discover(self, path=''):
         from discovery import discover_installations
+        if path:
+            selected = Path(path).expanduser()
+            if not selected.is_absolute() or not selected.is_dir():
+                raise UserError('Select a readable folder containing your WoW installation.')
+            return discover_installations(selected_root=selected)
         return discover_installations()
 
     def client(self):

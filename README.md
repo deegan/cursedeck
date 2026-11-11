@@ -2,13 +2,13 @@
 
 A first implementation of a Decky Loader plugin for installing and updating World of Warcraft addons from Gaming Mode. React/TypeScript provides the Decky panel; a Python standard-library backend handles CurseForge access and addon files.
 
-**Status:** The frontend passes TypeScript checks and builds successfully, and an installable test ZIP can be generated with `npm run package`. The 48 backend, local addon, discovery, plugin integration, packaging, and release updater tests and the offline smoke test have passed. Testing in Decky on a Steam Deck and live CurseForge downloads with an approved API key remain outstanding.
+**Status:** The frontend passes TypeScript checks and builds successfully, and an installable test ZIP can be generated with `npm run package`. The 55 backend, local addon, discovery, plugin integration, packaging, and release updater tests and the offline smoke test have passed. Testing in Decky on a Steam Deck and live CurseForge downloads with an approved API key remain outstanding.
 
 ## Download and plugin updates
 
 Download **CurseDeck.zip** from the [latest GitHub release](https://github.com/deegan/cursedeck/releases/latest) for your first installation. Future releases can be installed from **CurseDeck → Plugin updates** in Gaming Mode.
 
-CurseDeck automatically checks GitHub when Decky loads and every six hours while Steam is running. When a newer stable version is available, it shows a notification. Select **Install CurseDeck [version]** and confirm Decky's installation dialog; Decky downloads the release ZIP, verifies its SHA-256 checksum, and reloads the plugin. Automatic checking can be disabled in **Plugin updates**. You can also check manually there.
+CurseDeck automatically checks GitHub when Decky loads and every six hours while Steam is running. When a newer stable version is available, it shows a notification. Select **Install CurseDeck [version]** and confirm Decky's installation dialog; CurseDeck downloads and verifies the release ZIP first, then Decky installs the staged local file and reloads the plugin. Preparation checks the checksum, archive paths, plugin identity, required files, and version before handing off. An attempt record survives reloads; success is shown only when the loaded package version reaches the requested version. A pending record means installation has not been verified. This flow still needs on-device testing. Automatic checking can be disabled in **Plugin updates**. You can also check manually there.
 
 This updates the CurseDeck plugin itself; **My addons → Update all** updates your WoW addons. Release checks require internet access but do not require a CurseForge API key. Plugin updates preserve your stored key, setup, update preferences, and WoW addon registry. Unattended installation is not enabled: Decky asks you to confirm each plugin update. The installer bridge depends on Decky's Loader interface; unsupported Loader versions display an error requesting a Decky update. On-device installation/reload remains to be validated.
 
@@ -19,7 +19,7 @@ This updates the CurseDeck plugin itself; **My addons → Update all** updates y
 - List existing addons from their local manifests without an API key.
 - List managed addons, check for updates, update individually or update all, and repair missing files.
 - Load WoW editions from CurseForge instead of hardcoding changing Classic versions.
-- Detect WoW installations in Steam game folders and Proton prefixes, including Steam libraries on SD cards and Flatpak Steam.
+- Detect WoW installations in Steam game folders and Proton prefixes, including mounted SD cards, common game folders, and Flatpak Steam.
 - Select a detected installation or enter a custom WoW edition folder.
 - Preserve unmanaged addons and all WTF settings.
 - Verify download lengths and checksums; reject unsafe ZIP entries, symlinks, duplicate paths, oversized archives, and conflicting addon folders.
@@ -76,7 +76,7 @@ The package command type-checks the frontend, builds it with Decky's Rollup pres
 
 Transfer the ZIP to your Steam Deck. Enable developer mode in Decky's settings and use its ZIP installation option to install it. Open CurseDeck in Decky's panel.
 
-1. **Setup** scans Steam libraries automatically on first setup. Use **Find WoW installations** to scan again and select a result in the **WoW installation** dropdown. If no result matches, enable **Use a custom location** and enter the absolute path to the edition folder containing `Wow.exe` or `WowClassic.exe`, not the Battle.net launcher or parent `World of Warcraft` folder. Example: `/home/deck/Games/battlenet/drive_c/Program Files (x86)/World of Warcraft/_retail_`. Your Proton prefix may use a different location.
+1. **Setup** scans Steam libraries automatically on first setup. Use **Find WoW installations** to scan again and select a result in the **WoW installation** dropdown. If no result matches, choose **Browse SD card or game folder** and select the card or the World of Warcraft folder. CurseDeck scans inside it and fills the edition dropdown. For a typed path, enable **Use a custom location** and enter the absolute path to the edition folder containing `Wow.exe` or `WowClassic.exe`, not the Battle.net launcher or parent `World of Warcraft` folder. Example: `/home/deck/Games/battlenet/drive_c/Program Files (x86)/World of Warcraft/_retail_`. Your Proton prefix may use a different location.
 2. Select **Show my addons** to view your installed addons immediately, without an API key.
 3. For online features, return to **Setup**, enter your API key, select **Load WoW editions**, choose the matching edition, and **Save setup**. CurseDeck cannot infer the edition from the executable; verify the selection yourself.
 4. Close WoW, then use **Find addons** to install addons.
@@ -86,9 +86,11 @@ The saved API key is kept in Decky's plugin settings directory in a mode-0600 JS
 
 ## Installation discovery
 
+Discovery also scans mounted cards under `/run/media/<user>` and `/media/<user>`, directly mounted volumes below `/run/media`, and common `~/Games`, `~/games`, `~/World of Warcraft`, and Wine locations. This includes WoW installed directly on an SD card through Battle.net without registering a Steam library. **Browse SD card or game folder** scopes discovery to a chosen location without typing a path.
+
 Discovery reads Steam's `libraryfolders.vdf`, then searches each library's `steamapps/common` and `steamapps/compatdata/<id>/pfx/drive_c` folders for `Wow.exe` or `WowClassic.exe`. It supports native and Flatpak Steam locations, additional registered libraries (including SD cards), multiple WoW editions, and arbitrary Proton IDs. Duplicate paths are collapsed. The dropdown uses readable edition names; duplicate installations of the same edition are numbered and show the selected location beneath the dropdown. A single detected installation is preselected. Saved locations remain selectable even if a scan does not find them. Manual path input is hidden behind **Use a custom location**. Selecting an installation resets the edition selection so you can explicitly choose the matching CurseForge edition before saving.
 
-The scan is read-only and does not require an API key. It skips large game-data and system folders and uses depth, directory-count, and time limits to keep setup responsive. Partial scans report a warning. Custom installations outside Steam libraries, inaccessible drives, or unusually deep folder layouts may need the manual path field. A folder name alone is insufficient: a supported WoW executable must be present.
+The scan is read-only and does not require an API key. It skips large game-data and system folders and uses depth, directory-count, and time limits to keep setup responsive. Partial scans report a warning. Inaccessible drives or unusually deep folder layouts may need the folder picker or manual path field. A folder name alone is insufficient: a supported WoW executable must be present.
 
 ## Existing addons and limitations
 
