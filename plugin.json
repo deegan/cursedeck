@@ -1,0 +1,4 @@
+{
+  "name": "CurseDeck", "author": "CurseDeck contributors", "flags": [], "api_version": 1,
+  "publish": {"tags": ["utility"], "description": "Install and update World of Warcraft addons through CurseForge."}
+}
