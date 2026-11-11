@@ -1,5 +1,7 @@
 from pathlib import Path
 import tempfile
+import json
+import hashlib
 import unittest
 import zipfile
 
@@ -13,9 +15,14 @@ class PackageTests(unittest.TestCase):
             for name in FILES:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text('test fixture')
+                path.write_text('{"version":"0.2.0"}' if name == 'package.json' else 'test fixture')
             (root / 'settings.json').write_text('private-key-fixture')
-            with zipfile.ZipFile(package(root)) as bundle:
+            artifact = package(root)
+            metadata = json.loads((root / 'out' / 'update.json').read_text())
+            self.assertEqual(metadata['sha256'], hashlib.sha256(artifact.read_bytes()).hexdigest())
+            self.assertEqual(metadata['version'], '0.2.0')
+            self.assertTrue(metadata['artifact'].endswith('/v0.2.0/CurseDeck.zip'))
+            with zipfile.ZipFile(artifact) as bundle:
                 self.assertEqual(set(bundle.namelist()), {'CurseDeck/' + f for f in FILES})
                 self.assertIn('CurseDeck/demo.py', bundle.namelist())
                 self.assertIsNone(bundle.testzip())

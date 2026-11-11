@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import json
 import decky
 import sys
 from pathlib import Path
@@ -8,11 +9,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from backend import Manager, UserError
 from demo import DemoSession
+from updates import ReleaseUpdater
 
 
 class Plugin:
     async def _main(self):
         self.manager = Manager(decky.DECKY_PLUGIN_SETTINGS_DIR)
+        version = json.loads((Path(__file__).parent / 'package.json').read_text())['version']
+        self.updater = ReleaseUpdater(decky.DECKY_PLUGIN_SETTINGS_DIR, version)
         self.demo = None
         self.operation_lock = threading.RLock()
 
@@ -71,3 +75,19 @@ class Plugin:
 
     async def install(self, mod_id):
         return await self._call('install', mod_id)
+
+    async def check_plugin_update(self, force=False):
+        try:
+            return {'ok': True, 'data': await asyncio.to_thread(self.updater.check, force)}
+        except UserError as error:
+            return {'ok': False, 'error': str(error)}
+        except Exception:
+            decky.logger.exception('Plugin update check failed')
+            return {'ok': False, 'error': 'Could not check plugin updates. Try again later.'}
+
+    async def set_update_checks(self, enabled):
+        try:
+            result = await asyncio.to_thread(self.updater.set_automatic_checks, enabled)
+            return {'ok': True, 'data': result}
+        except Exception:
+            return {'ok': False, 'error': 'Could not save update preferences.'}

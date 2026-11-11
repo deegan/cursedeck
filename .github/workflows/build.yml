@@ -31,6 +31,12 @@ jobs:
           python-version: '3.13'
       - name: Install frontend dependencies
         run: npm ci
+      - run: npm run test:frontend
+      - name: Verify release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node -e 'if (process.env.RELEASE_TAG !== "v" + JSON.parse(require("fs").readFileSync("package.json")).version) process.exit(1)'
       - run: npm run package
       - uses: actions/upload-artifact@v4
         with:
@@ -39,3 +45,28 @@ jobs:
             out/CurseDeck.zip
             package-lock.json
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            out/CurseDeck.zip
+            out/update.json
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" release-assets/CurseDeck.zip release-assets/update.json --verify-tag --title "CurseDeck $RELEASE_TAG" --notes-file RELEASE_NOTES.md --latest

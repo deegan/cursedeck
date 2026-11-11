@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, TextField, staticClasses } from '@decky/ui';
-import { callable, definePlugin } from '@decky/api';
+import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, TextField, ToggleField, staticClasses } from '@decky/ui';
+import { callable, definePlugin, toaster } from '@decky/api';
+import { PluginUpdate, requestPluginUpdate, deckyInstallerBridge } from './pluginUpdates';
 import { FaBoxOpen } from 'react-icons/fa';
 
 type Reply<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -9,6 +10,8 @@ type Edition = { id: number; name: string };
 type Mod = { id: number; name: string; summary: string };
 type Installed = { id: number; name: string; version: string; update: string | null; error: string | null; missing: boolean };
 type Library = { addons: Installed[]; unmanaged: string[] };
+const checkPluginUpdate = callable<[boolean], Reply<PluginUpdate>>('check_plugin_update');
+const setUpdateChecks = callable<[boolean], Reply<{automaticChecks: boolean}>>('set_update_checks');
 const setDemo = callable<[boolean], Reply<Settings>>('set_demo');
 const status = callable<[], Reply<Settings>>('status');
 const configure = callable<[string, number, string], Reply<Settings>>('configure');
@@ -23,6 +26,8 @@ async function unwrap<T>(promise: Promise<Reply<T>>): Promise<T> {
 }
 
 function Content() {
+  const [pluginUpdate, setPluginUpdate] = useState<PluginUpdate>();
+  const [updateError, setUpdateError] = useState('');
   const [tab, setTab] = useState('installed');
   const [settings, setSettings] = useState<Settings>();
   const [path, setPath] = useState('');
@@ -46,6 +51,13 @@ function Content() {
     finally { running.current = false; setBusy(''); }
   }
   useEffect(() => {
+    let active = true;
+    void unwrap(checkPluginUpdate(false)).then(result => {
+      if (active) setPluginUpdate(result);
+    }).catch(error => { if (active) setUpdateError(String(error)); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
     void run('Loading…', async () => {
       const saved = await unwrap(status());
       setSettings(saved); setPath(saved.path); setFlavor(saved.flavor);
@@ -67,13 +79,35 @@ function Content() {
     <PanelSection>
       {settings?.demo && <p role="status">Offline demo · sample addons in a temporary installation. Your WoW files are untouched.</p>}
       <DropdownItem label="CurseDeck" selectedOption={tab} disabled={!!busy}
-        rgOptions={[{data:'installed',label:'My addons'},{data:'browse',label:'Find addons'},{data:'setup',label:'Setup'}]}
+        rgOptions={[{data:'installed',label:'My addons'},{data:'browse',label:'Find addons'},{data:'setup',label:'Setup'},{data:'updates',label:'Plugin updates'}]}
         onChange={(option) => setTab(option.data)} />
+      {pluginUpdate?.available && tab !== 'updates' && <p>CurseDeck {pluginUpdate.version} is available. Open Plugin updates to install.</p>}
       {busy && <p role="status">{busy}</p>}
       {error && <p role="alert" style={{color:'#ffb4a9',overflowWrap:'anywhere'}}>{error}</p>}
       {notice && <p role="status">{notice}</p>}
     </PanelSection>
-    {tab === 'setup' && <PanelSection title="World of Warcraft setup">
+    {tab === 'updates' && <PanelSection title="CurseDeck updates">
+      <p>Installed: {pluginUpdate?.current ?? 'Loading…'}</p>
+      <p>Updates download and install here through Decky. Confirm its installation dialog when prompted.</p>
+      {updateError && <p role="alert">{updateError}</p>}
+      {pluginUpdate && <ToggleField label="Automatically check for releases"
+        description="Check when Decky loads and every six hours while Steam is running."
+        checked={pluginUpdate.automaticChecks} disabled={!!busy}
+        onChange={enabled => void run('Saving update preference…', async () => {
+          const prefs = await unwrap(setUpdateChecks(enabled));
+          setPluginUpdate({...pluginUpdate, ...prefs});
+        })} />}
+      {button('Check for plugin update', async () => {
+        const update = await unwrap(checkPluginUpdate(true));
+        setPluginUpdate(update); setUpdateError('');
+        if (!update.available) setNotice('You have the latest published CurseDeck release.');
+      })}
+      {pluginUpdate?.available && button(`Install CurseDeck ${pluginUpdate.version}`, async () => {
+        await requestPluginUpdate(pluginUpdate, deckyInstallerBridge());
+        setNotice('Confirm the update in Decky’s installation dialog.');
+      })}
+    </PanelSection>}
+    {tab === 'setup'  && <PanelSection title="World of Warcraft setup">
       {button(settings?.demo ? 'Leave offline demo' : 'Try offline demo', async () => {
         const saved = await unwrap(setDemo(!settings?.demo));
         setSettings(saved); setPath(saved.path); setFlavor(saved.flavor); setKey('');
@@ -138,7 +172,27 @@ function Content() {
     </PanelSection>}
   </>;
 }
-export default definePlugin(() => ({
+export default definePlugin(() => {
+  let stopped = false;
+  let checking = false;
+  let notifiedVersion: string | null = null;
+  const check = async () => {
+    if (checking) return;
+    checking = true;
+    try {
+      const update = await unwrap(checkPluginUpdate(false));
+      if (!stopped && update.automaticChecks && update.available && update.version !== notifiedVersion) {
+        notifiedVersion = update.version;
+        toaster.toast({title: 'CurseDeck update available', body: `Version ${update.version}. Open CurseDeck → Plugin updates to install.`});
+      }
+    } catch { /* Network failures remain available through the manual check button. */ }
+    finally { checking = false; }
+  };
+  void check();
+  const timer = setInterval(() => void check(), 6 * 60 * 60 * 1000);
+  return {
   name: 'CurseDeck', titleView: <div className={staticClasses.Title}>CurseDeck</div>,
   content: <Content />, icon: <FaBoxOpen />,
-}));
+  onDismount() { stopped = true; clearInterval(timer); },
+};
+});

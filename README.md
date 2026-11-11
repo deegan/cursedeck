@@ -2,7 +2,15 @@
 
 A first implementation of a Decky Loader plugin for installing and updating World of Warcraft addons from Gaming Mode. React/TypeScript provides the Decky panel; a Python standard-library backend handles CurseForge access and addon files.
 
-**Status:** The frontend passes TypeScript checks and builds successfully, and an installable test ZIP can be generated with `npm run package`. The 23 backend, plugin integration, and packaging tests and the offline smoke test have passed. Testing in Decky on a Steam Deck and live CurseForge downloads with an approved API key remain outstanding.
+**Status:** The frontend passes TypeScript checks and builds successfully, and an installable test ZIP can be generated with `npm run package`. The 30 backend, plugin integration, packaging, and release updater tests and the offline smoke test have passed. Testing in Decky on a Steam Deck and live CurseForge downloads with an approved API key remain outstanding.
+
+## Download and plugin updates
+
+Download **CurseDeck.zip** from the [latest GitHub release](https://github.com/deegan/cursedeck/releases/latest) for your first installation. Future releases can be installed from **CurseDeck → Plugin updates** in Gaming Mode.
+
+CurseDeck automatically checks GitHub when Decky loads and every six hours while Steam is running. When a newer stable version is available, it shows a notification. Select **Install CurseDeck [version]** and confirm Decky's installation dialog; Decky downloads the release ZIP, verifies its SHA-256 checksum, and reloads the plugin. Automatic checking can be disabled in **Plugin updates**. You can also check manually there.
+
+This updates the CurseDeck plugin itself; **My addons → Update all** updates your WoW addons. Release checks require internet access but do not require a CurseForge API key. Plugin updates preserve your stored key, setup, update preferences, and WoW addon registry. Unattended installation is not enabled: Decky asks you to confirm each plugin update. The installer bridge depends on Decky's Loader interface; unsupported Loader versions display an error requesting a Decky update. On-device installation/reload remains to be validated.
 
 ## Features
 
@@ -34,6 +42,8 @@ python3 scripts/demo_smoke.py
 The **Build CurseDeck** workflow runs on pushes, pull requests, and manual dispatch. It tests the backend on Python 3.9 and 3.13, type-checks and builds the frontend, and uploads **CurseDeck-test-build** containing `CurseDeck.zip` and the committed npm lockfile. No API key or repository secret is needed. Check [GitHub Actions](https://github.com/deegan/cursedeck/actions/workflows/build.yml) for the latest build results.
 
 Download the artifact from a successful Actions run and extract it to obtain the installable ZIP. Builds use `npm ci` with the committed `package-lock.json` to pin dependency versions.
+
+To publish a new version, update `package.json` and `package-lock.json`, edit `RELEASE_NOTES.md`, commit the changes, and push a matching `vMAJOR.MINOR.PATCH` tag. After the backend tests and package build pass, the workflow creates the GitHub release with `CurseDeck.zip` and `update.json`. The manifest contains the tagged ZIP URL and its SHA-256 checksum. Release publication uses GitHub Actions' repository token; no personal access token is required.
 
 ## Requirements
 
