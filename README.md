@@ -1,7 +1,5 @@
 # CurseDeck
 
-![CurseDeck banner](CurseDeck_banner.jpeg)
-
 **World of Warcraft addons, right from Gaming Mode.**
 
 CurseDeck brings addon management to your Steam Deck through [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader). Find your WoW installation, see what's installed, and connect to CurseForge to browse, install, and update addons without switching to Desktop Mode.
