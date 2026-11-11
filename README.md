@@ -27,7 +27,7 @@ This updates the CurseDeck plugin itself; **My addons → Update all** updates y
 
 ## View your addons without an API key
 
-In **Setup**, select your WoW installation and choose **Save folder and scan addons**. **My addons** reads names, versions, and notes from the installed `.toc` manifests. Use **Refresh installed addons** after installing or removing addons outside CurseDeck. The scanned directory is shown so you can check that you selected the correct WoW edition. Existing addons are labeled **Installed outside CurseDeck**; automatic update matching for them is not implemented.
+In **Setup**, choose Retail, Classic, or another detected edition from the **WoW installation** dropdown and choose **Show my addons**. **My addons** reads names, versions, and notes from the installed `.toc` manifests. Use **Refresh installed addons** after installing or removing addons outside CurseDeck. The scanned directory is shown so you can check that you selected the correct WoW edition. Existing addons are labeled **Installed outside CurseDeck**; automatic update matching for them is not implemented.
 
 If you see Quest Compass or Shared Library marked demo, select **Leave demo and find my addons**, then choose your real installation. Local listing needs neither a CurseForge key nor internet access. Online search, downloads, and version checks require an API key and a saved CurseForge edition.
 
@@ -76,8 +76,8 @@ The package command type-checks the frontend, builds it with Decky's Rollup pres
 
 Transfer the ZIP to your Steam Deck. Enable developer mode in Decky's settings and use its ZIP installation option to install it. Open CurseDeck in Decky's panel.
 
-1. **Setup** scans Steam libraries automatically on first setup. Use **Find WoW installations** to scan again and select a result under **Detected installations**. If no result matches, enter the absolute path to the edition folder containing `Wow.exe` or `WowClassic.exe`, not the Battle.net launcher or parent `World of Warcraft` folder. Example: `/home/deck/Games/battlenet/drive_c/Program Files (x86)/World of Warcraft/_retail_`. Your Proton prefix may use a different location.
-2. Select **Save folder and scan addons** to view your installed addons immediately, without an API key.
+1. **Setup** scans Steam libraries automatically on first setup. Use **Find WoW installations** to scan again and select a result in the **WoW installation** dropdown. If no result matches, enable **Use a custom location** and enter the absolute path to the edition folder containing `Wow.exe` or `WowClassic.exe`, not the Battle.net launcher or parent `World of Warcraft` folder. Example: `/home/deck/Games/battlenet/drive_c/Program Files (x86)/World of Warcraft/_retail_`. Your Proton prefix may use a different location.
+2. Select **Show my addons** to view your installed addons immediately, without an API key.
 3. For online features, return to **Setup**, enter your API key, select **Load WoW editions**, choose the matching edition, and **Save setup**. CurseDeck cannot infer the edition from the executable; verify the selection yourself.
 4. Close WoW, then use **Find addons** to install addons.
 5. Use **My addons → Check for updates**, then **Update** or **Update all**.
@@ -86,7 +86,7 @@ The saved API key is kept in Decky's plugin settings directory in a mode-0600 JS
 
 ## Installation discovery
 
-Discovery reads Steam's `libraryfolders.vdf`, then searches each library's `steamapps/common` and `steamapps/compatdata/<id>/pfx/drive_c` folders for `Wow.exe` or `WowClassic.exe`. It supports native and Flatpak Steam locations, additional registered libraries (including SD cards), multiple WoW editions, and arbitrary Proton IDs. Duplicate paths are collapsed; every detected installation is shown with its full path. Selecting an installation resets the edition selection so you can explicitly choose the matching CurseForge edition before saving.
+Discovery reads Steam's `libraryfolders.vdf`, then searches each library's `steamapps/common` and `steamapps/compatdata/<id>/pfx/drive_c` folders for `Wow.exe` or `WowClassic.exe`. It supports native and Flatpak Steam locations, additional registered libraries (including SD cards), multiple WoW editions, and arbitrary Proton IDs. Duplicate paths are collapsed. The dropdown uses readable edition names; duplicate installations of the same edition are numbered and show the selected location beneath the dropdown. A single detected installation is preselected. Saved locations remain selectable even if a scan does not find them. Manual path input is hidden behind **Use a custom location**. Selecting an installation resets the edition selection so you can explicitly choose the matching CurseForge edition before saving.
 
 The scan is read-only and does not require an API key. It skips large game-data and system folders and uses depth, directory-count, and time limits to keep setup responsive. Partial scans report a warning. Custom installations outside Steam libraries, inaccessible drives, or unusually deep folder layouts may need the manual path field. A folder name alone is insufficient: a supported WoW executable must be present.
 

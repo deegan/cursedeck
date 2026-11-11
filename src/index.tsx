@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, TextField, ToggleField, staticClasses } from '@decky/ui';
 import { callable, definePlugin, toaster } from '@decky/api';
 import { PluginUpdate, requestPluginUpdate, deckyInstallerBridge } from './pluginUpdates';
+import { installationOptions } from './installations';
 import { FaBoxOpen } from 'react-icons/fa';
 
 type Reply<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -34,6 +35,7 @@ function Content() {
   const [tab, setTab] = useState('installed');
   const [settings, setSettings] = useState<Settings>();
   const [discovery, setDiscovery] = useState<Discovery>();
+  const [manualPath, setManualPath] = useState(false);
   const [path, setPath] = useState('');
   const [key, setKey] = useState('');
   const [flavor, setFlavor] = useState(0);
@@ -66,13 +68,21 @@ function Content() {
       const saved = await unwrap(status());
       setSettings(saved); setPath(saved.path); setFlavor(saved.flavor);
       if (saved.path) setLibrary(await unwrap(installed(false)));
-      else { setTab('setup'); setDiscovery(await unwrap(discover())); }
+      else { setTab('setup'); await scanInstallations(saved.path); }
     });
   }, []);
   const button = (label: string, action: () => Promise<void>, disabled = false) => (
     <PanelSectionRow><ButtonItem layout="below" disabled={!!busy || disabled}
       onClick={() => void run(label + '…', action)}>{label}</ButtonItem></PanelSectionRow>
   );
+  async function scanInstallations(preferredPath = path) {
+    const found = await unwrap(discover());
+    setDiscovery(found);
+    if (!preferredPath && found.installations.length === 1) {
+      setPath(found.installations[0].path); setFlavor(0);
+    }
+  }
+  const choices = installationOptions(discovery?.installations ?? [], settings?.path ?? '');
   async function browse(index: number) {
     setResults(await unwrap(search(query, index))); setOffset(index); setSearched(true);
   }
@@ -86,15 +96,20 @@ function Content() {
         {button('Leave demo and find my addons', async () => {
           const saved = await unwrap(setDemo(false));
           setSettings(saved); setPath(saved.path); setFlavor(saved.flavor);
-          setKey(''); setTypes([]); setResults([]); setSearched(false); setOffset(0);
+          setKey(''); setManualPath(false); setTypes([]); setResults([]); setSearched(false); setOffset(0);
           setLibrary({addons:[],unmanaged:[]}); setTab('setup');
-          setDiscovery(await unwrap(discover()));
+          await scanInstallations(saved.path);
           if (saved.path) setLibrary(await unwrap(installed(false)));
         })}
       </>}
       <DropdownItem label="CurseDeck" selectedOption={tab} disabled={!!busy}
         rgOptions={[{data:'installed',label:'My addons'},{data:'browse',label:'Find addons'},{data:'setup',label:'Setup'},{data:'updates',label:'Plugin updates'}]}
-        onChange={(option) => setTab(option.data)} />
+        onChange={(option) => {
+          setTab(option.data);
+          if (option.data === 'setup' && !settings?.demo && !discovery) {
+            void run('Finding WoW installations…', () => scanInstallations());
+          }
+        }} />
       {pluginUpdate?.available && tab !== 'updates' && <p>CurseDeck {pluginUpdate.version} is available. Open Plugin updates to install.</p>}
       {busy && <p role="status">{busy}</p>}
       {error && <p role="alert" style={{color:'#ffb4a9',overflowWrap:'anywhere'}}>{error}</p>}
@@ -128,21 +143,29 @@ function Content() {
         setTypes([]); setResults([]); setOffset(0); setSearched(false);
         setLibrary(saved.path ? await unwrap(installed(false)) : {addons:[],unmanaged:[]});
         setTab(saved.demo ? 'installed' : 'setup');
+        setManualPath(false);
+        if (!saved.demo) await scanInstallations(saved.path);
       })}
       {!settings?.demo && <>
-      {button('Find WoW installations', async () => setDiscovery(await unwrap(discover())))}
-      {discovery && <>
-        {discovery.installations.length > 0 ? <DropdownItem label="Detected installations"
-          selectedOption={path} strDefaultLabel="Choose an installation" disabled={!!busy}
-          rgOptions={discovery.installations.map(item => ({data:item.path,label:`${item.label} — ${item.path}`}))}
-          onChange={option => {setPath(option.data); setFlavor(0);}} />
-          : <p>No WoW installations found in Steam libraries. Enter the edition folder below if you installed it elsewhere.</p>}
-        {discovery.warnings.map(warning => <p key={warning}>{warning}</p>)}
-      </>}
-      <p>Select the edition folder inside your WoW installation, for example _retail_ or _classic_. Close WoW before changing addons.</p>
-      <PanelSectionRow><TextField label="WoW edition folder" value={path} disabled={!!busy}
-        onChange={(e) => setPath(e.target.value)} /></PanelSectionRow>
-      {button('Save folder and scan addons', async () => {
+      <p>Choose the version of WoW whose addons you want to view.</p>
+      <DropdownItem label="WoW installation" selectedOption={path}
+        strDefaultLabel={busy ? 'Finding installations…' : 'Choose an installation'} disabled={!!busy || manualPath}
+        rgOptions={choices}
+        onChange={option => {setPath(option.data); setFlavor(0);}} />
+      {choices.length > 1 && path && <p style={{overflowWrap:'anywhere'}}>Location: {path}</p>}
+      {button('Find WoW installations', () => scanInstallations())}
+      {discovery && !discovery.installations.length && <p>No installations found. Check that your game drive is connected and scan again, or use a custom location below.</p>}
+      {discovery?.warnings.map(warning => <p key={warning}>{warning}</p>)}
+      <ToggleField label="Use a custom location" description="Advanced: for installations the scan cannot find."
+        checked={manualPath} disabled={!!busy} onChange={enabled => {
+          setManualPath(enabled);
+          if (!enabled && !choices.some(choice => choice.data === path)) {
+            setPath(settings?.path ?? ''); setFlavor(settings?.flavor ?? 0);
+          }
+        }} />
+      {manualPath && <PanelSectionRow><TextField label="Custom WoW folder" value={path} disabled={!!busy}
+        onChange={(e) => {setPath(e.target.value); setFlavor(0);}} /></PanelSectionRow>}
+      {button('Show my addons', async () => {
         const saved = await unwrap(configureLocal(path));
         setSettings(saved); setPath(saved.path); setFlavor(saved.flavor);
         setResults([]); setSearched(false); setOffset(0);
