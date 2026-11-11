@@ -2,7 +2,7 @@
 
 A first implementation of a Decky Loader plugin for installing and updating World of Warcraft addons from Gaming Mode. React/TypeScript provides the Decky panel; a Python standard-library backend handles CurseForge access and addon files.
 
-**Status:** The frontend passes TypeScript checks and builds successfully, and an installable test ZIP can be generated with `npm run package`. The 39 backend, discovery, plugin integration, packaging, and release updater tests and the offline smoke test have passed. Testing in Decky on a Steam Deck and live CurseForge downloads with an approved API key remain outstanding.
+**Status:** The frontend passes TypeScript checks and builds successfully, and an installable test ZIP can be generated with `npm run package`. The 48 backend, local addon, discovery, plugin integration, packaging, and release updater tests and the offline smoke test have passed. Testing in Decky on a Steam Deck and live CurseForge downloads with an approved API key remain outstanding.
 
 ## Download and plugin updates
 
@@ -16,6 +16,7 @@ This updates the CurseDeck plugin itself; **My addons → Update all** updates y
 
 - Search CurseForge with pagination, filtered to your selected WoW edition.
 - Install stable addon releases and required dependencies.
+- List existing addons from their local manifests without an API key.
 - List managed addons, check for updates, update individually or update all, and repair missing files.
 - Load WoW editions from CurseForge instead of hardcoding changing Classic versions.
 - Detect WoW installations in Steam game folders and Proton prefixes, including Steam libraries on SD cards and Flatpak Steam.
@@ -24,7 +25,13 @@ This updates the CurseDeck plugin itself; **My addons → Update all** updates y
 - Verify download lengths and checksums; reject unsafe ZIP entries, symlinks, duplicate paths, oversized archives, and conflicting addon folders.
 - Stage the whole dependency set before replacement and restore replaced folders if a normal filesystem operation fails.
 
-## Try it without an API key
+## View your addons without an API key
+
+In **Setup**, select your WoW installation and choose **Save folder and scan addons**. **My addons** reads names, versions, and notes from the installed `.toc` manifests. Use **Refresh installed addons** after installing or removing addons outside CurseDeck. The scanned directory is shown so you can check that you selected the correct WoW edition. Existing addons are labeled **Installed outside CurseDeck**; automatic update matching for them is not implemented.
+
+If you see Quest Compass or Shared Library marked demo, select **Leave demo and find my addons**, then choose your real installation. Local listing needs neither a CurseForge key nor internet access. Online search, downloads, and version checks require an API key and a saved CurseForge edition.
+
+## Optional offline demo
 
 After building and installing the plugin, open **Setup → Try offline demo**. No API key or real WoW installation is needed.
 
@@ -50,7 +57,7 @@ To publish a new version, update `package.json` and `package-lock.json`, edit `R
 
 - Decky Loader with the modern `@decky/api` plugin interface (API version 1).
 - A WoW installation writable by Decky's normal plugin user. No root plugin flag is used.
-- A CurseForge API key approved for third-party API use. [Apply through CurseForge](https://support.curseforge.com/support/solutions/articles/9000208346-about-the-curseforge-api-and-how-to-apply-for-a-key). A CurseForge website login alone does not supply an API key.
+- For online search, downloads, and update checks: a CurseForge API key approved for third-party API use. [Apply through CurseForge](https://support.curseforge.com/support/solutions/articles/9000208346-about-the-curseforge-api-and-how-to-apply-for-a-key). A CurseForge website login alone does not supply an API key.
 - Node.js/npm for building and Python 3.9+ for the backend/tests.
 
 CurseForge may disallow third-party distribution for individual projects. CurseDeck respects those restrictions; it cannot replace the CurseForge app for every addon. The API key is sent in headers to the official API and trusted HTTPS ForgeCDN hosts, including download redirects. See the [API reference](https://docs.curseforge.com/rest-api/) and [CDN authentication announcement](https://blog.curseforge.com/introducing-api-key-authentication-for-curseforge-file-downloads/).
@@ -70,8 +77,8 @@ The package command type-checks the frontend, builds it with Decky's Rollup pres
 Transfer the ZIP to your Steam Deck. Enable developer mode in Decky's settings and use its ZIP installation option to install it. Open CurseDeck in Decky's panel.
 
 1. **Setup** scans Steam libraries automatically on first setup. Use **Find WoW installations** to scan again and select a result under **Detected installations**. If no result matches, enter the absolute path to the edition folder containing `Wow.exe` or `WowClassic.exe`, not the Battle.net launcher or parent `World of Warcraft` folder. Example: `/home/deck/Games/battlenet/drive_c/Program Files (x86)/World of Warcraft/_retail_`. Your Proton prefix may use a different location.
-2. Enter your API key and select **Load WoW editions**.
-3. Select the edition matching that folder and **Save setup**. CurseDeck cannot infer the edition from the executable; verify the selection yourself.
+2. Select **Save folder and scan addons** to view your installed addons immediately, without an API key.
+3. For online features, return to **Setup**, enter your API key, select **Load WoW editions**, choose the matching edition, and **Save setup**. CurseDeck cannot infer the edition from the executable; verify the selection yourself.
 4. Close WoW, then use **Find addons** to install addons.
 5. Use **My addons → Check for updates**, then **Update** or **Update all**.
 
@@ -85,7 +92,7 @@ The scan is read-only and does not require an API key. It skips large game-data 
 
 ## Existing addons and limitations
 
-Existing addon folders are displayed as unmanaged and are never automatically overwritten. To adopt one, first back it up outside `Interface/AddOns`, then install its CurseForge project through CurseDeck. Leave your `WTF` folder in place. Automatic fingerprint-based adoption, uninstall, release channels, and scheduled addon updates are not implemented.
+Existing addons show their names and versions from local `.toc` manifests and are labeled **Installed outside CurseDeck**. They are never automatically overwritten. To adopt one, first back it up outside `Interface/AddOns`, then install its CurseForge project through CurseDeck. Leave your `WTF` folder in place. Automatic fingerprint-based adoption, uninstall, release channels, and scheduled addon updates are not implemented.
 
 Only stable releases for the selected edition are installed; compatibility is based on CurseForge edition metadata, not an exact installed WoW patch. Archives must contain top-level addon folders with `.toc` files. Unusual archive layouts are rejected. An update replaces each managed folder, including locally edited addon code; back up personal edits separately.
 

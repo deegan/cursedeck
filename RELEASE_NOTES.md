@@ -1,12 +1,14 @@
-Find your WoW installation directly from CurseDeck's Setup screen.
+View your real installed WoW addons without a CurseForge API key.
 
-- Automatically scan on first setup, or select **Find WoW installations** to scan again.
-- Search Steam game folders and all numbered Proton prefixes without relying on a fixed Steam ID.
-- Read Steam's library list to include SD cards and other registered libraries; support native and Flatpak Steam.
-- Display every detected WoW edition with its full path, and collapse duplicate paths.
-- Confirm installations using `Wow.exe` or `WowClassic.exe`; leave the filesystem unchanged during discovery.
-- Keep manual path entry for custom locations, and report incomplete scans.
+- Save a detected or manually entered WoW folder using **Save folder and scan addons**.
+- List existing addons with their names, versions, notes, and folder names, read directly from local `.toc` files.
+- Use **Refresh installed addons** to rescan after external changes.
+- See the exact AddOns path being scanned and clearer empty-list guidance.
+- Leave sample data with **Leave demo and find my addons**.
+- Handle Interface/AddOns directory capitalization without creating an empty duplicate directory.
 
-Upgrade from v0.2.0 through **CurseDeck → Plugin updates → Check for plugin update → Install**, then confirm Decky's dialog. For a first installation, download **CurseDeck.zip** below.
+Upgrade through **CurseDeck → Plugin updates → Check for plugin update → Install**, then confirm Decky's dialog. Leave demo mode, choose your real WoW installation in Setup, and save the folder.
 
-The frontend build, updater bridge tests, 39 Python tests, and offline smoke test pass. Tests cover arbitrary Proton IDs, SD-card libraries, Flatpak paths, multiple editions, duplicate symlinks, unreadable folders, and scan limits. Steam Deck hardware testing and live CurseForge downloads remain outstanding.
+Local listing requires no API key or network connection. Online CurseForge search, downloads, and update checks still require a key and edition selection. Existing addons are labeled **Installed outside CurseDeck**; automatic update matching for them remains unimplemented.
+
+All 48 Python tests, frontend updater tests, TypeScript checks, package build, and offline smoke test pass. Real Steam Deck operation and live CurseForge downloads still need validation.

@@ -178,21 +178,32 @@ class Manager:
     def client(self):
         return self.client_factory(self.settings()['key'])
 
-    def root(self):
-        raw = self.settings()['path']
+    def root(self, create=True, path=None):
+        raw = self.settings()['path'] if path is None else path
         if not raw:
             raise UserError('Choose your WoW edition folder in Setup first.')
         root = Path(raw).expanduser().resolve()
         if not root.is_dir() or not any((root / exe).is_file() for exe in ('Wow.exe', 'WowClassic.exe')):
             raise UserError('Choose the WoW edition folder containing Wow.exe or WowClassic.exe, such as _retail_.')
-        addons = root / 'Interface' / 'AddOns'
-        if (root / 'Interface').is_symlink() or addons.is_symlink():
+        def child(parent, name):
+            matches = [p for p in parent.iterdir() if p.name.casefold() == name.casefold()] if parent.is_dir() else []
+            if len(matches) > 1:
+                raise UserError(f'Multiple folders match {name}; choose a single folder before continuing.')
+            return matches[0] if matches else parent / name
+        interface = child(root, 'Interface')
+        if interface.is_symlink():
             raise UserError('Symlinked Interface or AddOns folders are not supported.')
-        addons.mkdir(parents=True, exist_ok=True)
+        addons = child(interface, 'AddOns')
+        if interface.is_symlink() or addons.is_symlink():
+            raise UserError('Symlinked Interface or AddOns folders are not supported.')
+        if (interface.exists() and not interface.is_dir()) or (addons.exists() and not addons.is_dir()):
+            raise UserError('Interface and AddOns must be directories.')
+        if create:
+            addons.mkdir(parents=True, exist_ok=True)
         return addons
 
     def state(self):
-        root = self.root()
+        root = self.root(create=False)
         path = root / '.cursedeck.json'
         if path.is_symlink():
             raise UserError('Refusing a symlinked addon registry.')
@@ -201,6 +212,22 @@ class Manager:
         if state['flavor'] != self.settings()['flavor']:
             raise UserError('This folder is registered for a different WoW edition. Restore its edition in Setup.')
         return root, state
+
+    def configure_local(self, path):
+        with self.lock:
+            addons = self.root(create=False, path=path)
+            root = str(Path(path).expanduser().resolve())
+            previous = self.settings()
+            flavor = previous['flavor'] if previous['path'] == root else 0
+            registry = addons / '.cursedeck.json'
+            if registry.is_symlink():
+                raise UserError('Refusing a symlinked addon registry.')
+            if registry.exists():
+                state = json.loads(registry.read_text())
+                validate_registry(state)
+                flavor = state['flavor']
+            atomic_json(self.settings_file, dict(previous, path=root, flavor=flavor))
+            return self.status()
 
     def configure(self, path, flavor, key):
         with self.lock:
@@ -214,7 +241,7 @@ class Manager:
                 raise UserError('The chosen folder must contain Wow.exe or WowClassic.exe.')
             if (root / 'Interface').is_symlink() or (root / 'Interface' / 'AddOns').is_symlink():
                 raise UserError('Symlinked Interface or AddOns folders are not supported.')
-            registry = root / 'Interface' / 'AddOns' / '.cursedeck.json'
+            registry = self.root(create=False, path=path) / '.cursedeck.json'
             if registry.is_symlink():
                 raise UserError('Refusing a symlinked addon registry.')
             if registry.exists() and json.loads(registry.read_text())['flavor'] != flavor:
@@ -255,13 +282,18 @@ class Manager:
                         item['error'] = str(error)
                 result.append(item)
             managed = {f.casefold() for m in state['addons'].values() for f in m['folders']}
-            unmanaged = sorted(p.name for p in root.iterdir() if p.is_dir()
+            unmanaged = sorted(p.name for p in (root.iterdir() if root.exists() else []) if p.is_dir()
                                and not p.name.startswith('.') and p.name.casefold() not in managed)
-            return {'addons': result, 'unmanaged': unmanaged}
+            from local_addons import read_addon
+            local = [read_addon(root / name, Path(self.settings()['path']).name) for name in unmanaged]
+            return {'addons': result, 'unmanaged': unmanaged, 'localAddons': local, 'path': str(root)}
 
     def install(self, mod_id):
         with self.lock:
+            if not self.settings()['flavor']:
+                raise UserError('Select and save your CurseForge WoW edition in Setup before installing addons.')
             root, state = self.state()
+            self.root(create=True)
             client = self.client()
             plan = {}
 

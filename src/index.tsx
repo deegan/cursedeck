@@ -10,11 +10,12 @@ type Discovery = { installations: {path: string; label: string; source: string}[
 type Edition = { id: number; name: string };
 type Mod = { id: number; name: string; summary: string };
 type Installed = { id: number; name: string; version: string; update: string | null; error: string | null; missing: boolean };
-type Library = { addons: Installed[]; unmanaged: string[] };
+type Library = { addons: Installed[]; unmanaged: string[]; path?: string; localAddons?: {folder: string; name: string; version: string | null; notes: string; error: string | null}[] };
 const checkPluginUpdate = callable<[boolean], Reply<PluginUpdate>>('check_plugin_update');
 const setUpdateChecks = callable<[boolean], Reply<{automaticChecks: boolean}>>('set_update_checks');
 const setDemo = callable<[boolean], Reply<Settings>>('set_demo');
 const status = callable<[], Reply<Settings>>('status');
+const configureLocal = callable<[string], Reply<Settings>>('configure_local');
 const configure = callable<[string, number, string], Reply<Settings>>('configure');
 const discover = callable<[], Reply<Discovery>>('discover');
 const editions = callable<[string], Reply<Edition[]>>('editions');
@@ -80,7 +81,17 @@ function Content() {
   }
   return <>
     <PanelSection>
-      {settings?.demo && <p role="status">Offline demo · sample addons in a temporary installation. Your WoW files are untouched.</p>}
+      {settings?.demo && <>
+        <p role="status">Offline demo · these are sample addons, not your installed WoW addons.</p>
+        {button('Leave demo and find my addons', async () => {
+          const saved = await unwrap(setDemo(false));
+          setSettings(saved); setPath(saved.path); setFlavor(saved.flavor);
+          setKey(''); setTypes([]); setResults([]); setSearched(false); setOffset(0);
+          setLibrary({addons:[],unmanaged:[]}); setTab('setup');
+          setDiscovery(await unwrap(discover()));
+          if (saved.path) setLibrary(await unwrap(installed(false)));
+        })}
+      </>}
       <DropdownItem label="CurseDeck" selectedOption={tab} disabled={!!busy}
         rgOptions={[{data:'installed',label:'My addons'},{data:'browse',label:'Find addons'},{data:'setup',label:'Setup'},{data:'updates',label:'Plugin updates'}]}
         onChange={(option) => setTab(option.data)} />
@@ -131,6 +142,14 @@ function Content() {
       <p>Select the edition folder inside your WoW installation, for example _retail_ or _classic_. Close WoW before changing addons.</p>
       <PanelSectionRow><TextField label="WoW edition folder" value={path} disabled={!!busy}
         onChange={(e) => setPath(e.target.value)} /></PanelSectionRow>
+      {button('Save folder and scan addons', async () => {
+        const saved = await unwrap(configureLocal(path));
+        setSettings(saved); setPath(saved.path); setFlavor(saved.flavor);
+        setResults([]); setSearched(false); setOffset(0);
+        setLibrary(await unwrap(installed(false))); setTab('installed');
+        setNotice('Local addon scan complete.');
+      }, !path)}
+      <p>An API key is only needed to search CurseForge, download addons, and check online updates.</p>
       <PanelSectionRow><TextField label={settings?.hasKey ? 'API key (saved; leave blank to keep)' : 'CurseForge API key'}
         value={key} bIsPassword disabled={!!busy} onChange={(e) => setKey(e.target.value)} /></PanelSectionRow>
       <p>Use a key approved by CurseForge for third-party API access. It is stored locally and is never included in the plugin bundle.</p>
@@ -147,7 +166,8 @@ function Content() {
     {tab === 'browse' && <PanelSection title={settings?.demo ? 'Find addons · Offline demo' : 'Find addons · CurseForge'}>
       <PanelSectionRow><TextField label="Addon name" value={query} disabled={!!busy}
         onChange={(e) => {setQuery(e.target.value); setOffset(0); setSearched(false); setResults([]);}} /></PanelSectionRow>
-      {button('Search', () => browse(0), !settings?.path)}
+      {!settings?.demo && (!settings?.hasKey || !settings?.flavor) && <p>Save a CurseForge API key and select your WoW edition in Setup to search online. Existing addons can be viewed without a key in My addons.</p>}
+      {button('Search', () => browse(0), !settings?.path || (!settings?.demo && (!settings?.hasKey || !settings?.flavor)))}
       {searched && !results.length && <p>No addons found for this search and edition.</p>}
       {results.map(mod => <PanelSection key={mod.id} title={mod.name}>
         <p>{mod.summary}</p>
@@ -158,7 +178,9 @@ function Content() {
     </PanelSection>}
     {tab === 'installed' && <PanelSection title="My addons">
       <p>Stable releases for your selected edition. Close WoW before installing or updating.</p>
-      {button('Check for updates', async () => setLibrary(await unwrap(installed(true))), !settings?.path)}
+      {library.path && <p style={{overflowWrap:'anywhere'}}>Scanning: {library.path}</p>}
+      {button('Refresh installed addons', async () => setLibrary(await unwrap(installed(false))), !settings?.path)}
+      {button('Check for updates', async () => setLibrary(await unwrap(installed(true))), !settings?.path || (!settings?.demo && (!settings?.hasKey || !settings?.flavor)))}
       {button('Update all', async () => {
         const updates = library.addons.filter(a => a.update);
         const failures: string[] = [];
@@ -170,17 +192,20 @@ function Content() {
         if (failures.length) throw new Error(failures.join('\n'));
         setNotice(`${updates.length} addon(s) updated.`);
       }, !library.addons.some(a => a.update))}
-      {!library.addons.length && <p>No addons managed yet. Use Find addons to install your first addon.</p>}
+      {!library.addons.length && !library.unmanaged.length && <p>{settings?.path ? 'No addon folders found in this installation. Check the scanned path or choose another WoW edition in Setup.' : 'Choose your WoW installation in Setup, then save the folder to list its addons.'}</p>}
       {library.addons.map(mod => <PanelSection key={mod.id} title={mod.name}>
         <p>{mod.version}{mod.missing ? ' · Files missing' : ''}</p>
         {mod.update && <p>Available: {mod.update}</p>}
         {mod.error && <p>{mod.error}</p>}
         {button(mod.update ? 'Update' : 'Repair / reinstall', () => add(mod.id))}
       </PanelSection>)}
-      {!!library.unmanaged.length && <PanelSection title="Existing unmanaged folders">
-        <p>{library.unmanaged.join(', ')}</p>
-        <p>These folders are left untouched. To manage one, back it up outside AddOns and install its project through Find addons. Your WTF settings are preserved.</p>
-      </PanelSection>}
+      {(library.localAddons ?? []).map(addon => <PanelSection key={addon.folder} title={addon.name}>
+        <p>{addon.version ?? 'Version unknown'} · Installed outside CurseDeck</p>
+        <p>Folder: {addon.folder}</p>
+        {addon.notes && <p>{addon.notes}</p>}
+        {addon.error && <p>{addon.error}</p>}
+      </PanelSection>)}
+      {!!library.unmanaged.length && <p>Existing addons are listed from disk. Automatic update matching for these addons is not available yet.</p>}
     </PanelSection>}
   </>;
 }

@@ -40,12 +40,12 @@ class Plugin:
                             self.demo = None
                         result = (self.demo.manager if self.demo else self.manager).status()
                     else:
-                        if self.demo and method == 'configure':
+                        if self.demo and method in ('configure', 'configure_local'):
                             raise UserError('Leave the offline demo before changing your real setup.')
                         manager = self.demo.manager if self.demo else self.manager
                         with manager.lock:
                             result = getattr(manager, method)(*args)
-                    if method in ('status', 'configure', 'set_demo'):
+                    if method in ('status', 'configure', 'configure_local', 'set_demo'):
                         result['demo'] = self.demo is not None
                     return result
             return {'ok': True, 'data': await asyncio.to_thread(invoke)}
@@ -60,6 +60,9 @@ class Plugin:
 
     async def status(self):
         return await self._call('status')
+
+    async def configure_local(self, path):
+        return await self._call('configure_local', path)
 
     async def configure(self, path, flavor, key):
         return await self._call('configure', path, flavor, key)
