@@ -40,8 +40,9 @@ After reviewing the [third-party API terms](https://support.curseforge.com/suppo
 
 1. Whether this WoW addon manager is an approved use under the competing-product restriction in §3.1, and whether a separate agreement is needed.
 2. The supported authentication model for a downloadable plugin under §2.2. The prototype accepts a user-supplied key; I am not proposing to distribute a shared developer secret in its source or release package.
-3. Permission under §3.1 to retain a local installation record containing project IDs, installed file IDs, names, versions, and folder ownership, plus temporary staging files during installation. This record supports update detection and safe file replacement.
-4. Any required attribution, branding, revenue arrangements, usage reporting, quotas, or restrictions specific to World of Warcraft access.
+3. Whether you support an approved user sign-in or delegated authorization flow for third-party WoW addon managers, allowing players to connect their own CurseForge accounts without handling developer API keys. This would simplify setup on a handheld. If available, what application credentials, permissions, and approval would CurseDeck still require? I am asking about a supported integration, not assuming that a website login grants API access.
+4. Permission under §3.1 to retain a local installation record containing project IDs, installed file IDs, names, versions, and folder ownership, plus temporary staging files during installation. This record supports update detection and safe file replacement.
+5. Any required attribution, branding, revenue arrangements, usage reporting, quotas, or restrictions specific to World of Warcraft access.
 
 **Readiness and review access**
 
