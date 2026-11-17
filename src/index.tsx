@@ -283,8 +283,7 @@ function Content() {
       {results.length === 20 && button('Next page', () => browse(offset + 20))}
     </PanelSection>}
     {tab === 'installed' && <PanelSection title="My addons">
-      <p>Stable releases for your selected edition. Close WoW before installing or updating.</p>
-      {library.path && <p style={{overflowWrap:'anywhere'}}>Scanning: {library.path}</p>}
+      {library.path && <div style={{overflowWrap:'anywhere', fontSize:12, color:'#b8bfc9', marginBottom:4}}>{library.path}</div>}
       {button('Refresh installed addons', async () => setLibrary(await unwrap(installed(false))), !settings?.path)}
       {button('Check for updates', async () => {
         const checked = await unwrap(installed(true));
@@ -303,8 +302,6 @@ function Content() {
         setNotice(`${updates.length} addon(s) updated.`);
       }, !library.addons.some(a => a.update && !a.blocked))}
       {!library.addons.length && !library.unmanaged.length && <p>{settings?.path ? 'No addon folders found in this installation. Check the scanned path or choose another WoW edition in Setup.' : 'Choose your WoW installation in Setup, then save the folder to list its addons.'}</p>}
-      {(library.addons.length > 0 || (library.localAddons?.length ?? 0) > 0) &&
-        <p style={{fontSize:12, color:'#b8bfc9'}}>Select an addon to show details.</p>}
       {library.addons.map(mod => <AddonCard key={mod.id} name={mod.name} icon={mod.logo || ''} version={mod.version}
         status={[mod.missing && 'Files missing', mod.error && 'Needs attention', mod.update && (mod.blocked ? 'Update in CurseForge app' : 'Update available')].filter(Boolean).join(' · ')}
         warning={mod.missing || !!mod.error}
