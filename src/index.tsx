@@ -12,7 +12,7 @@ type Reply<T> = { ok: true; data: T } | { ok: false; error: string };
 type Settings = { path: string; flavor: number; hasKey: boolean; demo: boolean };
 type Discovery = { installations: {path: string; label: string; source: string}[]; warnings: string[]; limited: boolean; scannedDirectories?: number };
 type Edition = { id: number; name: string };
-type Mod = { id: number; name: string; summary: string };
+type Mod = { id: number; name: string; summary: string; logo?: string };
 const handoffFailed = callable<[string], Reply<PluginUpdate>>('update_handoff_failed');
 const updateStatus = callable<[], Reply<PluginUpdate>>('plugin_update_status');
 const preparePluginUpdate = callable<[], Reply<PluginUpdate>>('prepare_plugin_update');
@@ -264,7 +264,7 @@ function Content() {
       {button('Search', () => browse(0), !settings?.path || (!settings?.demo && (!settings?.hasKey || !settings?.flavor)))}
       {searched && !results.length && <p>No addons found for this search and edition.</p>}
       {results.length > 0 && <p style={{fontSize:12, color:'#b8bfc9'}}>Select an addon to show its description.</p>}
-      {results.map(mod => <AddonCard key={mod.id} name={mod.name}
+      {results.map(mod => <AddonCard key={mod.id} name={mod.name} icon={mod.logo || ''}
         action={addonAction(library.addons.some(a => a.id === mod.id) ? 'Update / repair' : 'Install', mod.id)}>
         {mod.summary || 'No description available.'}
       </AddonCard>)}
@@ -305,7 +305,7 @@ function Content() {
       {!library.addons.length && !library.unmanaged.length && <p>{settings?.path ? 'No addon folders found in this installation. Check the scanned path or choose another WoW edition in Setup.' : 'Choose your WoW installation in Setup, then save the folder to list its addons.'}</p>}
       {(library.addons.length > 0 || (library.localAddons?.length ?? 0) > 0) &&
         <p style={{fontSize:12, color:'#b8bfc9'}}>Select an addon to show details.</p>}
-      {library.addons.map(mod => <AddonCard key={mod.id} name={mod.name} version={mod.version}
+      {library.addons.map(mod => <AddonCard key={mod.id} name={mod.name} icon={mod.logo || ''} version={mod.version}
         status={[mod.missing && 'Files missing', mod.error && 'Needs attention', mod.update && (mod.blocked ? 'Update in CurseForge app' : 'Update available')].filter(Boolean).join(' · ')}
         warning={mod.missing || !!mod.error}
         action={mod.update && !mod.blocked ? addonAction('Update', mod.id) : undefined}>
@@ -323,7 +323,7 @@ function Content() {
         {mod.error && <div style={{marginTop:6, color:'#ffb4a9'}}>{mod.error}</div>}
         {!mod.update && !mod.blocked && <div style={{marginTop:8}}>{addonAction('Repair / reinstall', mod.id)}</div>}
       </AddonCard>)}
-      {(library.localAddons ?? []).map(addon => <AddonCard key={addon.folder} name={addon.name} version={addon.version}
+      {(library.localAddons ?? []).map(addon => <AddonCard key={addon.folder} name={addon.name} icon="" version={addon.version}
         status={addon.error ? 'Needs attention' : undefined} warning={!!addon.error}>
         <div>Installed outside CurseDeck</div>
         <div style={{marginTop:6}}>Folder: {addon.folder}</div>

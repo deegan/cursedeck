@@ -112,6 +112,19 @@ def download_page(website, file_id):
     return f'https://www.curseforge.com{parsed.path}/download/{file_id}'
 
 
+def logo_url(mod):
+    """A project's small logo on CurseForge's image CDN, or '' if it has none or it points elsewhere."""
+    logo = mod.get('logo') if isinstance(mod, dict) else None
+    url = logo.get('thumbnailUrl') if isinstance(logo, dict) else None
+    if not isinstance(url, str) or len(url) > 500:
+        return ''
+    parsed = urllib.parse.urlsplit(url)
+    host = parsed.hostname or ''
+    if parsed.scheme != 'https' or parsed.username or parsed.port or not (host == 'forgecdn.net' or host.endswith('.forgecdn.net')):
+        return ''
+    return url
+
+
 def atomic_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(dir=path.parent, prefix='.cursedeck-')
@@ -353,9 +366,11 @@ class Manager:
         settings = self.settings()
         if not settings['flavor']:
             raise UserError('Complete Setup before searching.')
-        return self.client().api('mods/search', gameId=GAME_ID, searchFilter=query[:200],
-                                 gameVersionTypeId=settings['flavor'], sortField=2, sortOrder='desc',
-                                 pageSize=20, index=max(0, min(int(index), 9980)))
+        found = self.client().api('mods/search', gameId=GAME_ID, searchFilter=query[:200],
+                                  gameVersionTypeId=settings['flavor'], sortField=2, sortOrder='desc',
+                                  pageSize=20, index=max(0, min(int(index), 9980)))
+        return [{'id': m.get('id'), 'name': m.get('name'), 'summary': m.get('summary') or '', 'logo': logo_url(m)}
+                for m in found if isinstance(m, dict)]
 
     def fingerprints(self, root, folders):
         """Folder fingerprints, cached until a file in the folder changes."""
@@ -444,6 +459,7 @@ class Manager:
                 for mod in client.post('mods', {'modIds': [r['id'] for r in records.values()]}):
                     if str(mod.get('id')) in records and isinstance(mod.get('name'), str) and mod['name'].strip():
                         records[str(mod['id'])]['name'] = mod['name'].strip()[:200]
+                        records[str(mod['id'])]['logo'] = logo_url(mod)
             except UserError:
                 pass  # Folder names still identify the addons.
             state['addons'].update(records)
@@ -467,6 +483,14 @@ class Manager:
                     projects = self.client().post('mods', {'modIds': [m['id'] for m in state['addons'].values()]})
                     blocked = {m.get('id'): (m.get('links') or {}).get('websiteUrl') for m in projects
                                if m.get('allowModDistribution') is False}
+                    changed = False
+                    for project in projects:
+                        record = state['addons'].get(str(project.get('id')))
+                        if record is not None and record.get('logo') != logo_url(project):
+                            record['logo'] = logo_url(project)
+                            changed = True
+                    if changed:
+                        atomic_json(root / '.cursedeck.json', state)
                 except UserError:
                     pass  # Installing still checks each project before downloading.
             for mod in state['addons'].values():
@@ -581,7 +605,8 @@ class Manager:
                             raise UserError('Two addons in this install use the same folder.')
                         claimed[folder.casefold()] = str(project_id)
                     records[str(project_id)] = {'id': project_id, 'name': mod['name'],
-                        'fileId': file['id'], 'version': file['displayName'], 'folders': folders}
+                        'fileId': file['id'], 'version': file['displayName'], 'folders': folders,
+                        'logo': logo_url(mod)}
                 existing = {p.name.casefold(): p for p in root.iterdir()}
                 owners = {f.casefold(): key for key, m in state['addons'].items() for f in m['folders']}
                 for folder, owner in claimed.items():

@@ -1,4 +1,4 @@
-export type Installed = { id: number; name: string; version: string; update: string | null; error: string | null; missing: boolean; adopted?: boolean; blocked?: boolean; fileId?: number; download?: {fileName: string; page: string} };
+export type Installed = { id: number; name: string; logo?: string; version: string; update: string | null; error: string | null; missing: boolean; adopted?: boolean; blocked?: boolean; fileId?: number; download?: {fileName: string; page: string} };
 export type Library = { addons: Installed[]; unmanaged: string[]; path?: string; matching?: {matched: number; unmatched: string[]; modified: string[]}; localAddons?: {folder: string; name: string; version: string | null; notes: string; error: string | null}[] };
 
 // An install returns the plain listing; keep the last check's results for addons it did not change.

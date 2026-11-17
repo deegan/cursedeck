@@ -1,6 +1,5 @@
-Find out how to get your CurseForge API key from inside CurseDeck.
+Addons now show their CurseForge icon next to their name.
 
-- Setup explains that CurseDeck uses your own free API key from console.curseforge.com, and offers **Open console.curseforge.com** until a key is saved.
-- The README walks through creating the key and loading it on the Deck from a text file.
-
-If you are on 0.3.6, this is also the first release you can install with **Plugin updates → Install CurseDeck**.
+- Search results show each addon's logo.
+- In My addons, press **Check for updates** once to fetch logos for addons you already have; after that they show without going online. Newly installed addons get theirs right away.
+- Addons CurseForge does not recognise show their first letter instead.

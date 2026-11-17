@@ -165,6 +165,23 @@ class MatchExistingTests(unittest.TestCase):
         self.assertEqual((pack['update'], pack['blocked']), ('1.1', True))
         self.assertEqual(pack['download'], {'fileName': 'Pack-1.1.zip', 'page': 'https://www.curseforge.com/wow/addons/pack/download/501'})
 
+    def test_check_stores_logo_and_listing_keeps_it(self):
+        logo = 'https://media.forgecdn.net/avatars/thumbnails/1/2/64/64/pack.png'
+        original = self.client.post.side_effect
+        self.client.post.side_effect = lambda route, body: (
+            [{'id': 10, 'name': 'Pack Addon', 'logo': {'thumbnailUrl': logo}}] if route == 'mods' else original(route, body))
+        [pack] = self.manager.installed(check=True)['addons']
+        self.assertEqual(pack['logo'], logo)
+        [pack] = self.manager.installed(check=False)['addons']
+        self.assertEqual(pack['logo'], logo)
+        # A later check replaces a logo that moved off CurseForge's CDN.
+        self.client.post.side_effect = lambda route, body: (
+            [{'id': 10, 'name': 'Pack Addon', 'logo': {'thumbnailUrl': 'https://example.com/x.png'}}]
+            if route == 'mods' else original(route, body))
+        self.manager.installed(check=True)
+        [pack] = self.manager.installed(check=False)['addons']
+        self.assertEqual(pack['logo'], '')
+
     def test_plain_listing_never_contacts_curseforge(self):
         library = self.manager.installed(check=False)
         self.client.post.assert_not_called()

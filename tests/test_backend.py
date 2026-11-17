@@ -9,7 +9,7 @@ import zipfile
 
 import urllib.request
 
-from backend import Client, Manager, SafeRedirect, UserError, atomic_json, download_page, read_key_file, trusted_url, unpack
+from backend import Client, Manager, SafeRedirect, UserError, atomic_json, download_page, logo_url, read_key_file, trusted_url, unpack
 
 
 def archive(files):
@@ -124,6 +124,15 @@ class BackendTests(unittest.TestCase):
             '11': {'id': 11, 'name': 'Library', 'fileId': 1, 'version': '1', 'folders': ['Library']}}})
         self.manager.install(10)
         self.assertEqual(self.client.request.call_count, 1)  # Only Example was downloaded.
+
+    def test_logo_only_from_curseforge_cdn(self):
+        good = 'https://media.forgecdn.net/avatars/thumbnails/1/2/64/64/a.png'
+        self.assertEqual(logo_url({'logo': {'thumbnailUrl': good}}), good)
+        for bad in ('http://media.forgecdn.net/a.png', 'https://evil.net/a.png', 'https://forgecdn.net.evil.net/a.png',
+                    'https://user@media.forgecdn.net/a.png', 'javascript:alert(1)', None, 5):
+            self.assertEqual(logo_url({'logo': {'thumbnailUrl': bad}}), '', bad)
+        self.assertEqual(logo_url({'logo': None}), '')
+        self.assertEqual(logo_url({}), '')
 
     def test_download_page_only_links_to_curseforge(self):
         self.assertEqual(download_page('https://www.curseforge.com/wow/addons/baganator', 9659116),
