@@ -12,8 +12,8 @@ type Settings = { path: string; flavor: number; hasKey: boolean; demo: boolean }
 type Discovery = { installations: {path: string; label: string; source: string}[]; warnings: string[]; limited: boolean; scannedDirectories?: number };
 type Edition = { id: number; name: string };
 type Mod = { id: number; name: string; summary: string };
-type Installed = { id: number; name: string; version: string; update: string | null; error: string | null; missing: boolean };
-type Library = { addons: Installed[]; unmanaged: string[]; path?: string; localAddons?: {folder: string; name: string; version: string | null; notes: string; error: string | null}[] };
+type Installed = { id: number; name: string; version: string; update: string | null; error: string | null; missing: boolean; adopted?: boolean; blocked?: boolean };
+type Library = { addons: Installed[]; unmanaged: string[]; path?: string; matching?: {matched: number; unmatched: string[]; modified: string[]}; localAddons?: {folder: string; name: string; version: string | null; notes: string; error: string | null}[] };
 const handoffFailed = callable<[string], Reply<PluginUpdate>>('update_handoff_failed');
 const updateStatus = callable<[], Reply<PluginUpdate>>('plugin_update_status');
 const preparePluginUpdate = callable<[], Reply<PluginUpdate>>('prepare_plugin_update');
@@ -259,17 +259,21 @@ function Content() {
       {button('Check for updates', async () => {
         const checked = await unwrap(installed(true));
         setLibrary(checked);
-        const found = checked.addons.filter(a => a.update).length;
+        const found = checked.addons.filter(a => a.update && !a.blocked).length;
+        const blockedUpdates = checked.addons.filter(a => a.update && a.blocked).length;
+        const failed = checked.addons.filter(a => a.error).length;
         const outside = checked.localAddons?.length ?? checked.unmanaged.length;
-        if (!checked.addons.length) {
-          setNotice(`Nothing to check: updates are only checked for addons installed through CurseDeck, and the ${outside} addon(s) here were installed another way.`);
-        } else {
-          setNotice(`${found ? `${found} update(s) available` : 'All CurseDeck addons are up to date'} (${checked.addons.length} checked).`
-            + (outside ? ` ${outside} addon(s) installed another way were not checked.` : ''));
-        }
+        const matched = checked.matching?.matched ?? 0;
+        const parts = [];
+        if (matched) parts.push(`Recognised ${matched} addon(s) on CurseForge.`);
+        if (!checked.addons.length) parts.push('No addons could be checked.');
+        else parts.push(`${found ? `${found} update(s) available` : 'Everything checked is up to date'} (${checked.addons.length} checked${failed ? `, ${failed} need attention` : ''}).`);
+        if (blockedUpdates) parts.push(`${blockedUpdates} more can only be updated through the CurseForge app.`);
+        if (outside) parts.push(`${outside} folder(s) were not recognised and cannot be updated here.`);
+        setNotice(parts.join(' '));
       }, !settings?.path || (!settings?.demo && (!settings?.hasKey || !settings?.flavor)))}
       {button('Update all', async () => {
-        const updates = library.addons.filter(a => a.update);
+        const updates = library.addons.filter(a => a.update && !a.blocked);
         const failures: string[] = [];
         for (const mod of updates) {
           try { await unwrap(install(mod.id)); }
@@ -278,18 +282,19 @@ function Content() {
         setLibrary(await unwrap(installed(true)));
         if (failures.length) throw new Error(failures.join('\n'));
         setNotice(`${updates.length} addon(s) updated.`);
-      }, !library.addons.some(a => a.update))}
+      }, !library.addons.some(a => a.update && !a.blocked))}
       {!library.addons.length && !library.unmanaged.length && <p>{settings?.path ? 'No addon folders found in this installation. Check the scanned path or choose another WoW edition in Setup.' : 'Choose your WoW installation in Setup, then save the folder to list its addons.'}</p>}
       {(library.addons.length > 0 || (library.localAddons?.length ?? 0) > 0) &&
         <p style={{fontSize:12, color:'#b8bfc9'}}>Select an addon to show details.</p>}
       {library.addons.map(mod => <AddonCard key={mod.id} name={mod.name} version={mod.version}
-        status={[mod.missing && 'Files missing', mod.error && 'Needs attention', mod.update && 'Update available'].filter(Boolean).join(' · ')}
+        status={[mod.missing && 'Files missing', mod.error && 'Needs attention', mod.update && (mod.blocked ? 'Update in CurseForge app' : 'Update available')].filter(Boolean).join(' · ')}
         warning={mod.missing || !!mod.error}
-        action={mod.update ? addonAction('Update', mod.id) : undefined}>
-        <div>Managed by CurseDeck</div>
+        action={mod.update && !mod.blocked ? addonAction('Update', mod.id) : undefined}>
+        <div>{mod.adopted ? 'Recognised on CurseForge; updates through CurseDeck replace its folders' : 'Managed by CurseDeck'}</div>
         {mod.update && <div style={{marginTop:6}}>Available: {mod.update}</div>}
+        {mod.blocked && <div style={{marginTop:6}}>The author only allows downloads through CurseForge's own app or website, so CurseDeck cannot install it.</div>}
         {mod.error && <div style={{marginTop:6, color:'#ffb4a9'}}>{mod.error}</div>}
-        {!mod.update && <div style={{marginTop:8}}>{addonAction('Repair / reinstall', mod.id)}</div>}
+        {!mod.update && !mod.blocked && <div style={{marginTop:8}}>{addonAction('Repair / reinstall', mod.id)}</div>}
       </AddonCard>)}
       {(library.localAddons ?? []).map(addon => <AddonCard key={addon.folder} name={addon.name} version={addon.version}
         status={addon.error ? 'Needs attention' : undefined} warning={!!addon.error}>
@@ -298,7 +303,9 @@ function Content() {
         {addon.notes && <div style={{marginTop:6}}>{addon.notes}</div>}
         {addon.error && <div style={{marginTop:6, color:'#ffb4a9'}}>{addon.error}</div>}
       </AddonCard>)}
-      {!!library.unmanaged.length && <p>Existing addons are listed from disk. Automatic update matching for these addons is not available yet.</p>}
+      {!!library.unmanaged.length && <p>{library.matching
+        ? 'These folders do not match a CurseForge release, for example because files were changed or the addon comes from elsewhere. They are left untouched.'
+        : 'Check for updates recognises addons installed another way and checks them too.'}</p>}
     </PanelSection>}
   </>;
 }

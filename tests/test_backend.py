@@ -57,6 +57,27 @@ class BackendTests(unittest.TestCase):
             self.manager.install(10)
         self.assertEqual((self.addons / 'Example' / 'personal.lua').read_text(), 'mine')
 
+    def test_folder_bundled_by_another_managed_project_is_taken_over(self):
+        for folder in ('Example', 'Other'):
+            (self.addons / folder).mkdir()
+            (self.addons / folder / f'{folder}.toc').write_text('old')
+        atomic_json(self.addons / '.cursedeck.json', {'flavor': 517, 'addons': {
+            '99': {'id': 99, 'name': 'Bundle', 'fileId': 1, 'version': '1', 'folders': ['Example', 'Other']},
+            '98': {'id': 98, 'name': 'Only', 'fileId': 1, 'version': '1', 'folders': ['Gone']}}})
+        self.manager.install(10)
+        registry = json.loads((self.addons / '.cursedeck.json').read_text())['addons']
+        self.assertEqual(registry['10']['folders'], ['Example'])
+        self.assertEqual(registry['99']['folders'], ['Other'])
+        self.assertEqual((self.addons / 'Example' / 'core.lua').read_text(), 'new')
+        self.assertEqual((self.addons / 'Other' / 'Other.toc').read_text(), 'old')
+
+    def test_project_left_without_folders_is_dropped(self):
+        (self.addons / 'Example').mkdir()
+        atomic_json(self.addons / '.cursedeck.json', {'flavor': 517, 'addons': {
+            '99': {'id': 99, 'name': 'Trace', 'fileId': 1, 'version': '1', 'folders': ['Example']}}})
+        self.manager.install(10)
+        self.assertEqual(list(json.loads((self.addons / '.cursedeck.json').read_text())['addons']), ['10'])
+
     def test_bad_checksum_changes_nothing(self):
         self.file['hashes'][0]['value'] = 'bad'
         with self.assertRaisesRegex(UserError, 'checksum'):

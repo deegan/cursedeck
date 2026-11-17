@@ -114,12 +114,17 @@ class Client:
     def __init__(self, key):
         self.key = key
 
-    def request(self, url, limit):
+    def request(self, url, limit, body=None):
         if not self.key:
             raise UserError('Save a CurseForge API key in Setup first.')
         if not trusted_url(url):
             raise UserError('CurseForge returned an unsupported download URL.')
         request = urllib.request.Request(url, headers={'User-Agent': 'CurseDeck/0.1', 'Accept': '*/*'})
+        if body is not None:
+            if not api_url(url):
+                raise UserError('Refusing to send data outside the CurseForge API.')
+            request.data = json.dumps(body).encode()
+            request.add_header('Content-Type', 'application/json')
         if api_url(url):
             request.add_header('x-api-key', self.key)
         try:
@@ -142,6 +147,9 @@ class Client:
         if params:
             url += '?' + urllib.parse.urlencode(params)
         return json.loads(self.request(url, 8 * 1024 * 1024))['data']
+
+    def post(self, route, body):
+        return json.loads(self.request('https://api.curseforge.com/v1/' + route, 8 * 1024 * 1024, body))['data']
 
     def latest(self, mod_id, flavor):
         # Filter on both the server and file metadata; never guess the WoW edition.
@@ -333,12 +341,119 @@ class Manager:
                                  gameVersionTypeId=settings['flavor'], sortField=2, sortOrder='desc',
                                  pageSize=20, index=max(0, min(int(index), 9980)))
 
+    def fingerprints(self, root, folders):
+        """Folder fingerprints, cached until a file in the folder changes."""
+        from fingerprint import folder_fingerprint
+        cache_file = self.settings_file.parent / 'fingerprints.json'
+        try:
+            cache = json.loads(cache_file.read_text())
+        except (OSError, ValueError):
+            cache = {}
+        result, fresh = {}, {}
+        for name in folders:
+            folder = root / name
+            signature = []
+            for dirpath, dirnames, filenames in os.walk(folder):
+                dirnames.sort()
+                for file in sorted(filenames):
+                    try:
+                        info = os.lstat(os.path.join(dirpath, file))
+                    except OSError:
+                        continue
+                    signature.append(f'{os.path.relpath(os.path.join(dirpath, file), folder)}:{info.st_size}:{info.st_mtime_ns}')
+            digest = hashlib.sha256('\n'.join(signature).encode('utf-8', 'surrogateescape')).hexdigest()
+            key = str(folder)
+            cached = cache.get(key)
+            if isinstance(cached, dict) and cached.get('signature') == digest:
+                fingerprint = cached.get('fingerprint')
+            else:
+                computed = folder_fingerprint(folder)
+                fingerprint = computed[0] if computed else None
+            fresh[key] = {'signature': digest, 'fingerprint': fingerprint}
+            if fingerprint is not None:
+                result[name] = fingerprint
+        cache = {k: v for k, v in cache.items() if not k.startswith(str(root) + os.sep)}
+        cache.update(fresh)
+        atomic_json(cache_file, cache)
+        return result
+
+    def match_existing(self, root, state, client):
+        """Adopt addons installed another way when CurseForge recognises their exact files.
+
+        Nothing on disk changes. An adopted addon is updated like one CurseDeck
+        installed: its folders are replaced by the newer release.
+        """
+        owned = {f.casefold() for m in state['addons'].values() for f in m['folders']}
+        local = {p.name.casefold(): p.name for p in root.iterdir()
+                 if p.is_dir() and not p.is_symlink() and not p.name.startswith('.') and p.name.casefold() not in owned}
+        summary = {'matched': 0, 'unmatched': [], 'modified': []}
+        if not local:
+            return summary
+        prints = self.fingerprints(root, sorted(local.values()))
+        if not prints:
+            summary['unmatched'] = sorted(local.values())
+            return summary
+        data = client.post(f'fingerprints/{GAME_ID}', {'fingerprints': sorted(set(prints.values()))})
+        records = {}
+        claimed = set()
+        for match in data.get('exactMatches') or []:
+            file = match.get('file') or {}
+            modules = file.get('modules') or []
+            if not isinstance(match.get('id'), int) or not isinstance(file.get('id'), int) or not modules:
+                continue
+            if str(match['id']) in state['addons'] or str(match['id']) in records:
+                continue
+            folders, usable = [], True
+            for module in modules:
+                name = module.get('name')
+                if not isinstance(name, str) or not name or Path(name).name != name or name.startswith('.'):
+                    usable = False
+                    break
+                present = local.get(name.casefold())
+                if present is None:
+                    continue  # Not installed locally; a later update adds it.
+                if prints.get(present) != module.get('fingerprint'):
+                    summary['modified'].append(present)
+                    usable = False
+                    break
+                folders.append(present)
+            if not usable or not folders or claimed & {f.casefold() for f in folders}:
+                continue
+            claimed.update(f.casefold() for f in folders)
+            records[str(match['id'])] = {'id': match['id'], 'name': folders[0], 'fileId': file['id'],
+                                         'version': str(file.get('displayName') or file['id']),
+                                         'folders': sorted(folders), 'adopted': True}
+        if records:
+            try:
+                for mod in client.post('mods', {'modIds': [r['id'] for r in records.values()]}):
+                    if str(mod.get('id')) in records and isinstance(mod.get('name'), str) and mod['name'].strip():
+                        records[str(mod['id'])]['name'] = mod['name'].strip()[:200]
+            except UserError:
+                pass  # Folder names still identify the addons.
+            state['addons'].update(records)
+            validate_registry(state)
+            atomic_json(root / '.cursedeck.json', state)
+        summary['matched'] = len(records)
+        summary['unmatched'] = sorted(name for key, name in local.items() if key not in claimed
+                                      and name not in summary['modified'])
+        return summary
+
     def installed(self, check=False):
         with self.lock:
             root, state = self.state()
+            matching = None
+            if check:
+                matching = self.match_existing(root, state, self.client())
             result = []
+            blocked = set()
+            if check and state['addons']:
+                try:
+                    projects = self.client().post('mods', {'modIds': [m['id'] for m in state['addons'].values()]})
+                    blocked = {m.get('id') for m in projects if m.get('allowModDistribution') is False}
+                except UserError:
+                    pass  # Installing still checks each project before downloading.
             for mod in state['addons'].values():
-                item = dict(mod, update=None, error=None,
+                item = dict(mod, update=None, error=None, blocked=mod['id'] in blocked,
                             missing=any((root / f).is_symlink() or not (root / f).is_dir()
                                 or not any(p.is_file() and p.suffix.lower() == '.toc'
                                            for p in (root / f).iterdir()) for f in mod['folders']))
@@ -355,7 +470,10 @@ class Manager:
                                and not p.name.startswith('.') and p.name.casefold() not in managed)
             from local_addons import read_addon
             local = [read_addon(root / name, Path(self.settings()['path']).name) for name in unmanaged]
-            return {'addons': result, 'unmanaged': unmanaged, 'localAddons': local, 'path': str(root)}
+            library = {'addons': result, 'unmanaged': unmanaged, 'localAddons': local, 'path': str(root)}
+            if matching is not None:
+                library['matching'] = matching
+            return library
 
     def install(self, mod_id):
         with self.lock:
@@ -412,7 +530,10 @@ class Manager:
                 existing = {p.name.casefold(): p for p in root.iterdir()}
                 owners = {f.casefold(): key for key, m in state['addons'].items() for f in m['folders']}
                 for folder, owner in claimed.items():
-                    if folder in existing and (owners.get(folder) != owner or existing[folder].is_symlink()):
+                    # Another CurseDeck-managed project may bundle the same folder (Questie ships
+                    # QuestieTrace); the release being installed takes it over. Folders CurseDeck
+                    # does not manage are never overwritten.
+                    if folder in existing and (owners.get(folder) is None or existing[folder].is_symlink()):
                         raise UserError(f'Folder {existing[folder].name} already exists outside this addon. Move it aside before installing.')
                 touched = set(f for r in records.values() for f in r['folders'])
                 touched.update(f for key in records for f in state['addons'].get(key, {}).get('folders', []))
@@ -431,7 +552,16 @@ class Manager:
                         for folder in record['folders']:
                             os.replace(stage / key / folder, root / folder)
                             placed.append(folder)
+                    for key, other in list(state['addons'].items()):
+                        if key in records:
+                            continue
+                        kept = [f for f in other['folders'] if f.casefold() not in claimed]
+                        if not kept:
+                            del state['addons'][key]
+                        elif len(kept) != len(other['folders']):
+                            state['addons'][key] = dict(other, folders=kept)
                     state['addons'].update(records)
+                    validate_registry(state)
                     atomic_json(root / '.cursedeck.json', state)
                 except BaseException:
                     for folder in placed:

@@ -36,6 +36,13 @@ class DemoClient:
             return {'id': pid, 'gameId': 1, 'name': name, 'summary': summary, 'allowModDistribution': True}
         raise UserError('Unsupported offline demo operation.')
 
+    def post(self, route, body):
+        if route == 'mods':
+            return [self.api(f'mods/{pid}') for pid in body.get('modIds', []) if pid in PROJECTS]
+        if route == 'fingerprints/1':
+            return {'exactMatches': []}
+        raise UserError('Unsupported offline demo operation.')
+
     def archive(self, pid):
         folder = PROJECTS[pid][1]
         data = io.BytesIO()

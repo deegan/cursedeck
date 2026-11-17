@@ -45,7 +45,9 @@ Multiple installations of the same edition are numbered, with the selected locat
 
 Addons already present in your WoW folder show **Installed outside CurseDeck** in their expanded details. Their names and versions are available without an API key, and CurseDeck leaves their files in place.
 
-Online updates are available for addons installed through CurseDeck. Existing addons are not automatically matched to CurseForge projects or adopted for updates.
+**My addons → Check for updates** also recognises existing addons. CurseDeck fingerprints each folder the way the CurseForge app does and asks CurseForge which release it is. An addon that matches a release exactly is listed as **Recognised on CurseForge** and can be updated like one CurseDeck installed: updating replaces its folders with the new release. Nothing on disk changes until you choose to update. Folders that were edited or come from elsewhere do not match and are left alone.
+
+Some authors only allow downloads through CurseForge's own app or website. CurseDeck shows when those addons have an update, but cannot install it.
 
 ## Connect to CurseForge
 
