@@ -4,6 +4,7 @@ Update the addons you already have, and keep your place when Quick Access closes
 - Addons whose authors only allow downloads through CurseForge's own app show their available update without an Update button.
 - When one addon's release bundles a folder another managed addon also provides (Questie now includes QuestieTrace), installing it takes that folder over instead of failing. Folders CurseDeck does not manage are still never overwritten.
 - The update check reports what it covered.
+- Addons whose downloads include hidden files, such as a stray .gitignore, now install instead of being rejected as unsafe.
 
 - Decky rebuilds the plugin panel each time Quick Access reopens, which sent CurseDeck back to My addons and discarded unsaved Setup choices. The selected tab, installation, edition, search and an entered API key now survive until Decky unloads the plugin.
 - Loading the API key from a text file now works: the file picker closes Quick Access, and the key used to be lost when it did.

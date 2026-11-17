@@ -180,7 +180,7 @@ def unpack(data, destination):
             mode = entry.external_attr >> 16
             if (not path.parts or path.is_absolute() or '..' in path.parts
                     or '\\' in entry.filename or ':' in entry.filename
-                    or any(p.startswith('.') for p in path.parts)
+                    or path.parts[0].startswith('.')  # Hidden files inside an addon (.gitignore) are fine.
                     or stat.S_ISLNK(mode) or (stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR))):
                 raise UserError('Addon contains an unsafe archive path.')
             for length in range(1, len(path.parts) + 1):

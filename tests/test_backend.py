@@ -106,6 +106,15 @@ class BackendTests(unittest.TestCase):
         with self.assertRaises(UserError):
             unpack(out.getvalue(), self.root / 'stage')
 
+    def test_hidden_files_inside_addon_are_extracted(self):
+        folders = unpack(archive({'Example/Example.toc': '## Interface: 1', 'Example/.gitignore': '*.bak',
+                                  'Example/.github/ci.yml': 'x'}), self.root / 'stage')
+        self.assertEqual(folders, ['Example'])
+        self.assertEqual((self.root / 'stage' / 'Example' / '.gitignore').read_text(), '*.bak')
+        for name in ('.cursedeck-x/Example.toc', '.git/config'):
+            with self.subTest(name=name), self.assertRaises(UserError):
+                unpack(archive({name: 'bad', 'Example/Example.toc': ''}), self.root / 'stage2')
+
     def test_symlinked_addons_rejected(self):
         self.addons.rmdir()
         self.addons.symlink_to(self.root, target_is_directory=True)
