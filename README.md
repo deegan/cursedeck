@@ -8,7 +8,7 @@ CurseDeck brings addon management to your Steam Deck through [Decky Loader](http
 
 [Download CurseDeck](https://github.com/deegan/cursedeck/releases/latest) · [Release notes](https://github.com/deegan/cursedeck/releases) · [Report an issue](https://github.com/deegan/cursedeck/issues)
 
-> **You need your own free CurseForge API key.** Create one at <https://console.curseforge.com/>; see [Create your API key](#create-your-api-key). Copy pasting from desktop-mode to game-mode does not alsways work, so the recommended procedure is to copy the API key and paste it into a .txt file in your Downloads or Documnets folder. During setup you select "Load from text-file" when asked for the API key.
+> **You need your own free CurseForge API key.** Create one at <https://console.curseforge.com/>; see [Create your API key](#create-your-api-key). Copy pasting from desktop-mode to game-mode does not always work, so the recommended procedure is to copy the API key and paste it into a .txt file in your Downloads or Documnets folder. During setup you select "Load from text-file" when asked for the API key and select the file from the file browser..
 
 ## Features
 
