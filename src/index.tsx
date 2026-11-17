@@ -256,7 +256,18 @@ function Content() {
       <p>Stable releases for your selected edition. Close WoW before installing or updating.</p>
       {library.path && <p style={{overflowWrap:'anywhere'}}>Scanning: {library.path}</p>}
       {button('Refresh installed addons', async () => setLibrary(await unwrap(installed(false))), !settings?.path)}
-      {button('Check for updates', async () => setLibrary(await unwrap(installed(true))), !settings?.path || (!settings?.demo && (!settings?.hasKey || !settings?.flavor)))}
+      {button('Check for updates', async () => {
+        const checked = await unwrap(installed(true));
+        setLibrary(checked);
+        const found = checked.addons.filter(a => a.update).length;
+        const outside = checked.localAddons?.length ?? checked.unmanaged.length;
+        if (!checked.addons.length) {
+          setNotice(`Nothing to check: updates are only checked for addons installed through CurseDeck, and the ${outside} addon(s) here were installed another way.`);
+        } else {
+          setNotice(`${found ? `${found} update(s) available` : 'All CurseDeck addons are up to date'} (${checked.addons.length} checked).`
+            + (outside ? ` ${outside} addon(s) installed another way were not checked.` : ''));
+        }
+      }, !settings?.path || (!settings?.demo && (!settings?.hasKey || !settings?.flavor)))}
       {button('Update all', async () => {
         const updates = library.addons.filter(a => a.update);
         const failures: string[] = [];
