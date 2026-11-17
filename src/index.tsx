@@ -6,6 +6,7 @@ import { callable, definePlugin, toaster, openFilePicker, FileSelectionType } fr
 import { PluginUpdate, requestPluginUpdate, deckyInstallerBridge } from './pluginUpdates';
 import { installationOptions } from './installations';
 import { AddonCard } from './AddonCard';
+import { deckyLoader, showLoadedVersion } from './reloadView';
 import { FaBoxOpen } from 'react-icons/fa';
 
 type Reply<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -354,9 +355,11 @@ export default definePlugin(() => {
   };
   void check();
   const timer = setInterval(() => void check(), 6 * 60 * 60 * 1000);
+  const content = <Content />;
+  const stopWaiting = showLoadedVersion(content, deckyLoader());
   return {
   name: 'CurseDeck', titleView: <div className={staticClasses.Title}>CurseDeck</div>,
-  content: <Content />, icon: <FaBoxOpen />,
-  onDismount() { stopped = true; clearInterval(timer); forgetAll(); },
+  content, icon: <FaBoxOpen />,
+  onDismount() { stopped = true; clearInterval(timer); stopWaiting(); forgetAll(); },
 };
 });

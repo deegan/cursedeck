@@ -1,5 +1,4 @@
-Addons now show their CurseForge icon next to their name.
+Updates now take effect without leaving CurseDeck.
 
-- Search results show each addon's logo.
-- In My addons, press **Check for updates** once to fetch logos for addons you already have; after that they show without going online. Newly installed addons get theirs right away.
-- Addons CurseForge does not recognise show their first letter instead.
+- After installing an update from **Plugin updates**, the open CurseDeck page switches to the new version by itself. Before, it kept showing the old version until you went back to the Decky plugin list and reopened CurseDeck.
+- If the page still shows the old version after an update, go back to the Decky plugin list and reopen CurseDeck.
