@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import shutil
+import ssl
 import stat
 import tempfile
 import threading
@@ -20,6 +21,39 @@ MAX_EXPANDED = 512 * 1024 * 1024
 
 class UserError(Exception):
     pass
+
+
+CA_FILES = ('/etc/ssl/certs/ca-certificates.crt', '/etc/ssl/cert.pem', '/etc/pki/tls/certs/ca-bundle.crt')
+
+
+def tls_context():
+    """Certificate store that works inside Decky's bundled Python.
+
+    Decky Loader's PyInstaller build looks for CA certificates where its build
+    system kept them (/usr/lib/ssl), which SteamOS lacks, so the default context
+    rejects every HTTPS certificate. Decky ships certifi for its own requests.
+    """
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except (ImportError, OSError, ssl.SSLError):
+        pass
+    for path in CA_FILES:
+        if os.path.isfile(path):
+            try:
+                return ssl.create_default_context(cafile=path)
+            except (OSError, ssl.SSLError):
+                continue
+    return ssl.create_default_context()
+
+
+def network_reason(error):
+    reason = getattr(error, 'reason', error)
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return 'secure connection could not be verified'
+    if isinstance(reason, (TimeoutError, OSError)) and 'timed out' in str(reason):
+        return 'connection timed out'
+    return 'no connection'
 
 
 def trusted_url(url):
@@ -89,7 +123,8 @@ class Client:
         if api_url(url):
             request.add_header('x-api-key', self.key)
         try:
-            with urllib.request.build_opener(SafeRedirect()).open(request, timeout=45) as response:
+            opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=tls_context()), SafeRedirect())
+            with opener.open(request, timeout=45) as response:
                 body = response.read(limit + 1)
                 if len(body) > limit:
                     raise UserError('Download exceeds the supported size limit.')
@@ -99,8 +134,8 @@ class Client:
                         403: 'CurseForge denied access or the author disabled third-party downloads.',
                         429: 'CurseForge rate limit reached. Try again later.'}
             raise UserError(messages.get(error.code, f'CurseForge request failed (HTTP {error.code}).')) from None
-        except (urllib.error.URLError, TimeoutError):
-            raise UserError('Could not reach CurseForge. Check your connection and try again.') from None
+        except (urllib.error.URLError, TimeoutError) as error:
+            raise UserError(f'Could not reach CurseForge ({network_reason(error)}). Check your connection and try again.') from None
 
     def api(self, route, **params):
         url = 'https://api.curseforge.com/v1/' + route

@@ -13,7 +13,7 @@ import time
 import urllib.error
 import urllib.request
 
-from backend import UserError, atomic_json
+from backend import UserError, atomic_json, network_reason, tls_context
 
 REPOSITORY = 'deegan/cursedeck'
 RELEASE_API = f'https://api.github.com/repos/{REPOSITORY}/releases/latest'
@@ -30,7 +30,7 @@ def read_json(url):
     request = urllib.request.Request(url, headers={
         'User-Agent': 'CurseDeck-Updater', 'Accept': 'application/json'})
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with urllib.request.urlopen(request, timeout=15, context=tls_context()) as response:
             body = response.read(1024 * 1024 + 1)
         if len(body) > 1024 * 1024:
             raise UserError('Release metadata is too large.')
@@ -41,8 +41,8 @@ def read_json(url):
         if error.code in (403, 429):
             raise UserError('GitHub rate limit or access restriction. Try checking again later.') from None
         raise UserError(f'GitHub release check failed (HTTP {error.code}).') from None
-    except (urllib.error.URLError, TimeoutError):
-        raise UserError('Could not check GitHub releases. Try again when connected.') from None
+    except (urllib.error.URLError, TimeoutError) as error:
+        raise UserError(f'Could not check GitHub releases ({network_reason(error)}). Try again when connected.') from None
     except (ValueError, TypeError):
         raise UserError('GitHub returned invalid release metadata.') from None
 
@@ -163,13 +163,13 @@ class ReleaseUpdater:
 
 def download_package(url):
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent':'CurseDeck-Updater'}), timeout=45) as response:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent':'CurseDeck-Updater'}), timeout=45, context=tls_context()) as response:
             data = response.read(32 * 1024 * 1024 + 1)
         if len(data) > 32 * 1024 * 1024:
             raise UserError('The plugin update exceeds the supported download size.')
         return data
-    except (urllib.error.URLError, TimeoutError):
-        raise UserError('Could not download the plugin update. Check your connection and retry.') from None
+    except (urllib.error.URLError, TimeoutError) as error:
+        raise UserError(f'Could not download the plugin update ({network_reason(error)}). Check your connection and retry.') from None
 
 
 def validate_package(data, version):

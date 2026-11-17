@@ -127,6 +127,25 @@ class BackendTests(unittest.TestCase):
             with self.assertRaises(UserError):
                 read_key_file(path)
 
+    def test_tls_context_uses_certifi_then_system_bundle(self):
+        import ssl, sys, types, backend
+        fake = types.SimpleNamespace(where=lambda: '/bundle/cacert.pem')
+        with patch.dict(sys.modules, {'certifi': fake}), patch('ssl.create_default_context') as create:
+            backend.tls_context()
+        create.assert_called_once_with(cafile='/bundle/cacert.pem')
+        with patch.dict(sys.modules, {'certifi': None}), patch('os.path.isfile', lambda p: p == '/etc/ssl/cert.pem'), \
+                patch('ssl.create_default_context') as create:
+            backend.tls_context()
+        create.assert_called_once_with(cafile='/etc/ssl/cert.pem')
+
+    def test_certificate_failure_is_reported(self):
+        import ssl, urllib.error
+        opener = unittest.mock.MagicMock()
+        opener.open.side_effect = urllib.error.URLError(ssl.SSLCertVerificationError('certificate verify failed'))
+        with patch('urllib.request.build_opener', return_value=opener):
+            with self.assertRaisesRegex(UserError, 'could not be verified'):
+                Client('k').request('https://api.curseforge.com/v1/games', 100)
+
     def test_trusted_hosts(self):
         self.assertTrue(trusted_url('https://edge.forgecdn.net/a'))
         for url in ('http://edge.forgecdn.net/a', 'https://evil.net/a', 'https://forgecdn.net.evil.net/a', 'file:///tmp/a'):
