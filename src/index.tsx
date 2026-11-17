@@ -229,7 +229,8 @@ function Content() {
         setLibrary(await unwrap(installed(false))); setTab('installed');
         setNotice('Local addon scan complete.');
       }, !path)}
-      <p>An API key is only needed to search CurseForge, download addons, and check online updates.</p>
+      <p>An API key is only needed to search CurseForge, download addons, and check online updates. Create your own free key at console.curseforge.com: sign in, open API keys, and copy the key. Saving it in a text file is easier than typing it here.</p>
+      {!settings?.hasKey && button('Open console.curseforge.com', async () => Navigation.NavigateToExternalWeb('https://console.curseforge.com/'))}
       <PanelSectionRow><TextField label={settings?.hasKey ? 'API key (saved; leave blank to keep)' : 'CurseForge API key'}
         value={key} bIsPassword disabled={!!busy} onChange={(e) => setKey(e.target.value)} /></PanelSectionRow>
       {button('Load API key from a text file', async () => {
@@ -245,7 +246,7 @@ function Content() {
         setKey(await unwrap(keyFromFile(selected.realpath || selected.path)));
       })}
       {key && <p role="status">A key is entered but not saved yet. Load WoW editions, then Save setup to store it.</p>}
-      <p>The file should contain the key and nothing else. Use a key approved by CurseForge for third-party API access. It is stored locally and is never included in the plugin bundle.</p>
+      <p>The file should contain the key and nothing else. The key is stored on this Deck and only sent to CurseForge.</p>
       {button('Load WoW editions', async () => setTypes(await unwrap(editions(key))))}
       {types.length > 0 && <DropdownItem label="WoW edition" selectedOption={flavor} disabled={!!busy}
         rgOptions={types.map(t => ({data:t.id,label:t.name}))} onChange={(option) => setFlavor(option.data)} />}
@@ -259,7 +260,7 @@ function Content() {
     {tab === 'browse' && <PanelSection title={settings?.demo ? 'Find addons · Offline demo' : 'Find addons · CurseForge'}>
       <PanelSectionRow><TextField label="Addon name" value={query} disabled={!!busy}
         onChange={(e) => {setQuery(e.target.value); setOffset(0); setSearched(false); setResults([]);}} /></PanelSectionRow>
-      {!settings?.demo && (!settings?.hasKey || !settings?.flavor) && <p>Save a CurseForge API key and select your WoW edition in Setup to search online. Existing addons can be viewed without a key in My addons.</p>}
+      {!settings?.demo && (!settings?.hasKey || !settings?.flavor) && <p>Save your CurseForge API key (free from console.curseforge.com) and select your WoW edition in Setup to search online. Existing addons can be viewed without a key in My addons.</p>}
       {button('Search', () => browse(0), !settings?.path || (!settings?.demo && (!settings?.hasKey || !settings?.flavor)))}
       {searched && !results.length && <p>No addons found for this search and edition.</p>}
       {results.length > 0 && <p style={{fontSize:12, color:'#b8bfc9'}}>Select an addon to show its description.</p>}

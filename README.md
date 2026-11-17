@@ -8,7 +8,7 @@ CurseDeck brings addon management to your Steam Deck through [Decky Loader](http
 
 [Download CurseDeck](https://github.com/deegan/cursedeck/releases/latest) · [Release notes](https://github.com/deegan/cursedeck/releases) · [Report an issue](https://github.com/deegan/cursedeck/issues)
 
-> **CurseForge API key required for online features.** You can find your WoW installation and view existing addons without a key. Searching CurseForge, downloading addons, and checking addon updates require an approved API key.
+> **CurseForge API key required for online features.** You can find your WoW installation and view existing addons without a key. Searching CurseForge, downloading addons, and checking addon updates require your own free CurseForge API key from <https://console.curseforge.com/>. See [Connect to CurseForge](#connect-to-curseforge).
 
 ## Features
 
@@ -51,18 +51,30 @@ Some authors only allow downloads through CurseForge's own app or website. For t
 
 ## Connect to CurseForge
 
-Request an API key approved for third-party use through [CurseForge's API application process](https://support.curseforge.com/support/solutions/articles/9000208346-about-the-curseforge-api-and-how-to-apply-for-a-key). A regular CurseForge account alone does not provide API access.
+CurseDeck uses your own personal CurseForge API key. It is free, and CurseDeck does not include one.
 
-Once your key is approved:
+### Create your key
 
-1. Open **Setup** and enter your **CurseForge API key**, or choose **Load API key from a text file** and pick a file containing only the key.
+This is easiest on a computer or in Desktop Mode:
+
+1. Open <https://console.curseforge.com/> and sign in with a CurseForge account (create one if needed).
+2. Open **API keys** in the console's menu and create or view your key.
+3. Copy the whole key. It is a long line of text starting with `$2a$10$`.
+
+Typing the key with the Deck's on-screen keyboard is error-prone, so save it in a text file instead: paste the key into a new file containing only the key, for example `curseforge-key.txt`, and copy the file to the Deck. Put it somewhere visible such as `Documents` or `Downloads`, since the file browser does not show hidden folders.
+
+### Add it to CurseDeck
+
+1. Open **Setup** and choose **Load API key from a text file**, then pick your file. You can also type or paste the key into **CurseForge API key**.
 2. Select **Load WoW editions**.
 3. Choose the edition matching your selected WoW installation.
 4. Select **Save setup**.
 
-Your key is saved locally in Decky's plugin settings. Leave the key field blank when changing other settings to keep the saved key.
+After saving, you can delete the text file.
 
-Some authors disable third-party downloads for their addons. CurseDeck respects those settings, so availability may differ from the CurseForge app.
+Your key is saved locally in Decky's plugin settings and is only sent to `api.curseforge.com`. Never share it, and leave the key field blank when changing other settings to keep the saved key.
+
+Some authors disable third-party downloads for their addons. CurseDeck respects those settings: for those addons, download the file from CurseForge yourself and install it with **Install downloaded ZIP**.
 
 ## Install and update addons
 
@@ -105,7 +117,7 @@ You're viewing the offline demo. Select **Leave demo and find my addons**, choos
 
 **CurseForge search or downloads aren't available.**
 
-Save an approved API key and the matching CurseForge edition in Setup. Check your connection and any error shown in the panel.
+Save your API key from <https://console.curseforge.com/> and the matching CurseForge edition in Setup. If CurseForge rejects the key, check that you copied all of it, starting with `$2a$10$`. Check your connection and any error shown in the panel.
 
 **An addon is listed but has no Update button.**
 
