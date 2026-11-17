@@ -24,7 +24,7 @@ class PackageTests(unittest.TestCase):
             self.assertTrue(metadata['artifact'].endswith('/v0.2.0/CurseDeck.zip'))
             with zipfile.ZipFile(artifact) as bundle:
                 self.assertEqual(set(bundle.namelist()), {'CurseDeck/' + f for f in FILES})
-                self.assertIn('CurseDeck/demo.py', bundle.namelist())
+                self.assertNotIn('CurseDeck/demo.py', bundle.namelist())
                 self.assertIsNone(bundle.testzip())
 
     def test_missing_build_does_not_create_zip(self):

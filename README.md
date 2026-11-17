@@ -8,12 +8,12 @@ CurseDeck brings addon management to your Steam Deck through [Decky Loader](http
 
 [Download CurseDeck](https://github.com/deegan/cursedeck/releases/latest) · [Release notes](https://github.com/deegan/cursedeck/releases) · [Report an issue](https://github.com/deegan/cursedeck/issues)
 
-> **CurseForge API key required for online features.** You can find your WoW installation and view existing addons without a key. Searching CurseForge, downloading addons, and checking addon updates require your own free CurseForge API key from <https://console.curseforge.com/>. See [Connect to CurseForge](#connect-to-curseforge).
+> **You need your own free CurseForge API key.** Create one at <https://console.curseforge.com/>; see [Create your API key](#create-your-api-key).
 
 ## Features
 
 - **Find your installation.** Detect WoW in Steam libraries, Proton prefixes, common game folders, and mounted SD cards—including installations made through Battle.net.
-- **Choose your edition.** Select Retail, Classic, or another detected installation from a dropdown. Use the folder browser for custom locations.
+- **Choose your version.** Select Retail, Classic, Forever, or another detected installation from a dropdown. Use the folder browser for other locations.
 - **See your addons.** View installed addon names, versions, and descriptions directly from your WoW folder, even offline.
 - **Browse CurseForge.** Search for addons filtered to your selected WoW edition.
 - **Install dependencies.** Required addon dependencies are included automatically.
@@ -29,50 +29,38 @@ You'll need Decky Loader and a World of Warcraft installation on your Steam Deck
 3. Use Decky's **Install plugin from ZIP** option and select the downloaded file.
 4. Open **CurseDeck** from the Decky panel.
 
-## Find your WoW addons
+## Set up CurseDeck
 
-1. Open **Setup**. CurseDeck scans for WoW installations during first-time setup.
-2. Choose your edition from the **WoW installation** dropdown.
-3. Select **Show my addons**.
+Open **CurseDeck → Setup** and work down the page:
 
-If your installation isn't listed, select **Find WoW installations** to scan again, or **Browse SD card or game folder** to choose its location. You can select the SD card or the World of Warcraft folder; CurseDeck searches inside it and lists the editions it finds.
+1. **Find World of Warcraft.** CurseDeck searches the Deck and SD card when you open Setup. If your installation isn't found, select **Search for WoW installations** again, or **Browse for the WoW folder** and pick the SD card or World of Warcraft folder.
+2. **Pick your version.** Choose the installation you play, such as Retail or Forever, from **WoW version**. The folder is shown beneath it.
+3. **Add your CurseForge API key.** Select **Load key from a text file** and pick the file holding your key (see [Create your API key](#create-your-api-key)), or type it in. CurseDeck checks the key with CurseForge straight away and fills in the matching **CurseForge edition**. For Classic, choose the edition you play.
+4. **First-time sync.** Select **Sync my addons**. CurseDeck saves your setup, recognises the addons you already have, and checks them for updates. Your addon files are not changed.
 
-Multiple installations of the same edition are numbered, with the selected location shown beneath the dropdown. You can switch installations from Setup at any time.
+You can come back to Setup at any time to switch installations or replace your key, then sync again.
 
 **My addons** shows the scanned folder and a compact list of addon names and versions. Select an addon to expand its description, folder, and other details. Available updates and issues are marked on the collapsed row. Use **Refresh installed addons** after making changes with another addon manager.
 
 ### Existing addons
 
-Addons already present in your WoW folder show **Installed outside CurseDeck** in their expanded details. Their names and versions are available without an API key, and CurseDeck leaves their files in place.
+Addons already present in your WoW folder show **Installed outside CurseDeck** in their expanded details. CurseDeck lists their names and versions and leaves their files in place.
 
 **My addons → Check for updates** also recognises existing addons. CurseDeck fingerprints each folder the way the CurseForge app does and asks CurseForge which release it is. An addon that matches a release exactly is listed as **Recognised on CurseForge** and can be updated like one CurseDeck installed: updating replaces its folders with the new release. Nothing on disk changes until you choose to update. Folders that were edited or come from elsewhere do not match and are left alone.
 
 Some authors only allow downloads through CurseForge's own app or website. For those addons, CurseDeck shows **Open download page** and **Install downloaded ZIP**: download the file from CurseForge, then choose it. CurseDeck installs it only if its size and checksums match the release CurseForge lists. If Steam's browser does not save the download, use a browser in Desktop Mode; the file can be anywhere on the Deck.
 
-## Connect to CurseForge
+## Create your API key
 
-CurseDeck uses your own personal CurseForge API key. It is free, and CurseDeck does not include one.
-
-### Create your key
-
-This is easiest on a computer or in Desktop Mode:
+CurseDeck uses your own personal CurseForge API key. It is free, and CurseDeck does not include one. This is easiest on a computer or in Desktop Mode:
 
 1. Open <https://console.curseforge.com/> and sign in with a CurseForge account (create one if needed).
 2. Open **API keys** in the console's menu and create or view your key.
 3. Copy the whole key. It is a long line of text starting with `$2a$10$`.
 
-Typing the key with the Deck's on-screen keyboard is error-prone, so save it in a text file instead: paste the key into a new file containing only the key, for example `curseforge-key.txt`, and copy the file to the Deck. Put it somewhere visible such as `Documents` or `Downloads`, since the file browser does not show hidden folders.
+Typing the key with the Deck's on-screen keyboard is error-prone, so save it in a text file instead: paste the key into a new file containing only the key, for example `curseforge-key.txt`, and copy the file to the Deck. Put it somewhere visible such as `Documents` or `Downloads`, since the file browser does not show hidden folders. Once setup is synced you can delete the file.
 
-### Add it to CurseDeck
-
-1. Open **Setup** and choose **Load API key from a text file**, then pick your file. You can also type or paste the key into **CurseForge API key**.
-2. Select **Load WoW editions**.
-3. Choose the edition matching your selected WoW installation.
-4. Select **Save setup**.
-
-After saving, you can delete the text file.
-
-Your key is saved locally in Decky's plugin settings and is only sent to `api.curseforge.com`. Never share it, and leave the key field blank when changing other settings to keep the saved key.
+Your key is saved locally in Decky's plugin settings and is only sent to `api.curseforge.com`. Never share it.
 
 Some authors disable third-party downloads for their addons. CurseDeck respects those settings: for those addons, download the file from CurseForge yourself and install it with **Install downloaded ZIP**.
 
@@ -95,33 +83,23 @@ To update, open **Plugin updates**, select **Install CurseDeck [version]**, and 
 
 Plugin updates do not require a CurseForge API key. If an update does not complete, the latest release ZIP can also be installed through Decky's ZIP installer.
 
-## Try the offline demo
-
-Choose **Setup → Try offline demo** to explore searching, installing, and updating sample addons without an API key or a WoW installation.
-
-Demo addons are clearly marked and stored separately from your game. Select **Leave demo and find my addons** to return to your real installation.
-
 ## Troubleshooting
 
 **My WoW installation isn't listed.**
 
-Check that the SD card or game drive is mounted. Use **Browse SD card or game folder** to select the card or WoW folder. **Use a custom location** provides manual path entry for unusual setups.
+Check that the SD card or game drive is mounted. Use **Browse for the WoW folder** in Setup to select the card or WoW folder.
 
 **My addons list is empty.**
 
 Check the scanned path shown in **My addons** and make sure you selected the edition you play. Then select **Refresh installed addons**.
 
-**I see Quest Compass or Shared Library marked demo.**
-
-You're viewing the offline demo. Select **Leave demo and find my addons**, choose your WoW installation, and press **Show my addons**.
-
 **CurseForge search or downloads aren't available.**
 
-Save your API key from <https://console.curseforge.com/> and the matching CurseForge edition in Setup. If CurseForge rejects the key, check that you copied all of it, starting with `$2a$10$`. Check your connection and any error shown in the panel.
+Complete Setup with your API key from <https://console.curseforge.com/> and the matching CurseForge edition. If CurseForge rejects the key, check that you copied all of it, starting with `$2a$10$`. Check your connection and any error shown in the panel.
 
 **An addon is listed but has no Update button.**
 
-Addons installed outside CurseDeck can be viewed, but are not automatically adopted for online updates.
+Select **Check for updates** first. Addons that match a CurseForge release exactly become updatable; folders that were edited or come from elsewhere stay **Installed outside CurseDeck** and are left alone.
 
 For other problems, [open an issue](https://github.com/deegan/cursedeck/issues) with your CurseDeck and Decky Loader versions, the steps you followed, and the error message. Never include your API key.
 
@@ -136,11 +114,7 @@ npm run test:frontend
 npm run package
 ```
 
-The installable package is written to `out/CurseDeck.zip`. To exercise the addon workflow without network access or game files:
-
-```sh
-python3 scripts/demo_smoke.py
-```
+The installable package is written to `out/CurseDeck.zip`.
 
 [GitHub Actions](https://github.com/deegan/cursedeck/actions/workflows/build.yml) runs the tests and produces downloadable build artifacts. Version tags publish release packages and their update manifests.
 

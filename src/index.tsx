@@ -4,13 +4,13 @@ import { Installed, Library, keepChecked } from './library';
 import { ButtonItem, DialogButton, DropdownItem, Navigation, PanelSection, PanelSectionRow, TextField, ToggleField, staticClasses } from '@decky/ui';
 import { callable, definePlugin, toaster, openFilePicker, FileSelectionType } from '@decky/api';
 import { PluginUpdate, requestPluginUpdate, deckyInstallerBridge } from './pluginUpdates';
-import { installationOptions } from './installations';
+import { editionFor, installationOptions } from './installations';
 import { AddonCard } from './AddonCard';
 import { deckyLoader, showLoadedVersion } from './reloadView';
 import { FaBoxOpen } from 'react-icons/fa';
 
 type Reply<T> = { ok: true; data: T } | { ok: false; error: string };
-type Settings = { path: string; flavor: number; hasKey: boolean; demo: boolean };
+type Settings = { path: string; flavor: number; hasKey: boolean };
 type Discovery = { installations: {path: string; label: string; source: string}[]; warnings: string[]; limited: boolean; scannedDirectories?: number };
 type Edition = { id: number; name: string };
 type Mod = { id: number; name: string; summary: string; logo?: string };
@@ -19,9 +19,7 @@ const updateStatus = callable<[], Reply<PluginUpdate>>('plugin_update_status');
 const preparePluginUpdate = callable<[], Reply<PluginUpdate>>('prepare_plugin_update');
 const checkPluginUpdate = callable<[boolean], Reply<PluginUpdate>>('check_plugin_update');
 const setUpdateChecks = callable<[boolean], Reply<{automaticChecks: boolean}>>('set_update_checks');
-const setDemo = callable<[boolean], Reply<Settings>>('set_demo');
 const status = callable<[], Reply<Settings>>('status');
-const configureLocal = callable<[string], Reply<Settings>>('configure_local');
 const configure = callable<[string, number, string], Reply<Settings>>('configure');
 const discoverIn = callable<[string], Reply<Discovery>>('discover');
 const discover = callable<[], Reply<Discovery>>('discover');
@@ -38,13 +36,27 @@ async function unwrap<T>(promise: Promise<Reply<T>>): Promise<T> {
   return reply.data;
 }
 
+function syncSummary(checked: Library): string {
+  const found = checked.addons.filter(a => a.update && !a.blocked).length;
+  const blockedUpdates = checked.addons.filter(a => a.update && a.blocked).length;
+  const failed = checked.addons.filter(a => a.error).length;
+  const outside = checked.localAddons?.length ?? checked.unmanaged.length;
+  const matched = checked.matching?.matched ?? 0;
+  const parts = [];
+  if (matched) parts.push(`Recognised ${matched} addon(s) on CurseForge.`);
+  if (!checked.addons.length) parts.push('No addons could be checked.');
+  else parts.push(`${found ? `${found} update(s) available` : 'Everything checked is up to date'} (${checked.addons.length} checked${failed ? `, ${failed} need attention` : ''}).`);
+  if (blockedUpdates) parts.push(`${blockedUpdates} more can only be updated through the CurseForge app.`);
+  if (outside) parts.push(`${outside} folder(s) were not recognised and cannot be updated here.`);
+  return parts.join(' ');
+}
+
 function Content() {
   const [pluginUpdate, setPluginUpdate] = useState<PluginUpdate>();
   const [updateError, setUpdateError] = useState('');
   const [tab, setTab] = usePersistentState('tab', 'installed');
   const [settings, setSettings] = useState<Settings>();
   const [discovery, setDiscovery] = usePersistentState<Discovery | undefined>('discovery', undefined);
-  const [manualPath, setManualPath] = usePersistentState('manualPath', false);
   const [path, setPath] = usePersistentState('path', '');
   const [key, setKey] = usePersistentState('key', '');
   const [flavor, setFlavor] = usePersistentState('flavor', 0);
@@ -97,6 +109,28 @@ function Content() {
     }
   }
   const choices = installationOptions(discovery?.installations ?? [], settings?.path ?? '');
+  const [keyStatus, setKeyStatus] = useState<{ok: boolean; text: string}>();
+  function changeKey(value: string) { setKey(value); setTypes([]); setKeyStatus(undefined); }
+  // Check the key with CurseForge as soon as there is one; its edition list is the proof it works.
+  useEffect(() => {
+    if (tab !== 'setup' || types.length) return;
+    const typed = key.trim();
+    if (typed ? typed.length < 20 : !settings?.hasKey) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      setKeyStatus({ok: true, text: 'Checking the key with CurseForge…'});
+      unwrap(editions(typed)).then(found => {
+        if (!active) return;
+        setTypes(found);
+        setKeyStatus(typed ? {ok: true, text: 'CurseForge accepted this key. It is saved when you sync.'} : undefined);
+      }).catch(e => { if (active) setKeyStatus({ok: false, text: e instanceof Error ? e.message : String(e)}); });
+    }, typed ? 600 : 0);
+    return () => { active = false; clearTimeout(timer); };
+  }, [tab, key, settings?.hasKey, types.length]);
+  // Fill in the CurseForge edition when the installation folder makes it certain.
+  useEffect(() => {
+    if (path && types.length && !types.some(t => t.id === flavor)) setFlavor(editionFor(path, types));
+  }, [path, types]);
   async function browse(index: number) {
     setResults(await unwrap(search(query, index))); setOffset(index); setSearched(true);
   }
@@ -126,22 +160,11 @@ function Content() {
   }
   return <>
     <PanelSection>
-      {settings?.demo && <>
-        <p role="status">Offline demo · these are sample addons, not your installed WoW addons.</p>
-        {button('Leave demo and find my addons', async () => {
-          const saved = await unwrap(setDemo(false));
-          setSettings(saved); setPath(saved.path); setFlavor(saved.flavor);
-          setKey(''); setManualPath(false); setTypes([]); setResults([]); setSearched(false); setOffset(0);
-          setLibrary({addons:[],unmanaged:[]}); setTab('setup');
-          await scanInstallations(saved.path);
-          if (saved.path) setLibrary(await unwrap(installed(false)));
-        })}
-      </>}
       <DropdownItem label="CurseDeck" selectedOption={tab} disabled={!!busy}
         rgOptions={[{data:'installed',label:'My addons'},{data:'browse',label:'Find addons'},{data:'setup',label:'Setup'},{data:'updates',label:'Plugin updates'}]}
         onChange={(option) => {
           setTab(option.data);
-          if (option.data === 'setup' && !settings?.demo && !discovery) {
+          if (option.data === 'setup' && !discovery) {
             void run('Finding WoW installations…', () => scanInstallations());
           }
         }} />
@@ -179,25 +202,10 @@ function Content() {
         setNotice('Confirm the update in Decky’s installation dialog.');
       })}
     </PanelSection>}
-    {tab === 'setup'  && <PanelSection title="World of Warcraft setup">
-      {button(settings?.demo ? 'Leave offline demo' : 'Try offline demo', async () => {
-        const saved = await unwrap(setDemo(!settings?.demo));
-        setSettings(saved); setPath(saved.path); setFlavor(saved.flavor); setKey('');
-        setTypes([]); setResults([]); setOffset(0); setSearched(false);
-        setLibrary(saved.path ? await unwrap(installed(false)) : {addons:[],unmanaged:[]});
-        setTab(saved.demo ? 'installed' : 'setup');
-        setManualPath(false);
-        if (!saved.demo) await scanInstallations(saved.path);
-      })}
-      {!settings?.demo && <>
-      <p>Choose the version of WoW whose addons you want to view.</p>
-      <DropdownItem label="WoW installation" selectedOption={path}
-        strDefaultLabel={busy ? 'Finding installations…' : 'Choose an installation'} disabled={!!busy || manualPath}
-        rgOptions={choices}
-        onChange={option => {setPath(option.data); setFlavor(0);}} />
-      {choices.length > 1 && path && <p style={{overflowWrap:'anywhere'}}>Location: {path}</p>}
-      {button('Find WoW installations', () => scanInstallations())}
-      {button('Browse SD card or game folder', async () => {
+    {tab === 'setup' && <>
+    <PanelSection title="1. Find World of Warcraft">
+      {button('Search for WoW installations', () => scanInstallations())}
+      {button('Browse for the WoW folder', async () => {
         let selected;
         try { selected = await openFilePicker(FileSelectionType.FOLDER, path || '/run/media', false, true); }
         catch (error) {
@@ -209,32 +217,28 @@ function Content() {
         setDiscovery(found);
         if (found.installations.length === 1) { setPath(found.installations[0].path); setFlavor(0); }
         else if (found.installations.length > 1) { setPath(''); setFlavor(0); }
-        if (!found.installations.length) setNotice('No WoW executable found in that folder. Select the World of Warcraft folder or the card containing it.');
+        if (!found.installations.length) setNotice('No WoW found in that folder. Select the World of Warcraft folder or the SD card that contains it.');
       })}
-      {discovery?.scannedDirectories !== undefined && <p>Checked {discovery.scannedDirectories} folders.</p>}
-      {discovery && !discovery.installations.length && <p>No installations found. Check that your SD card is mounted, or use Browse SD card or game folder to select its location.</p>}
+      {discovery && <p>{discovery.installations.length
+        ? `Found ${discovery.installations.length} installation${discovery.installations.length === 1 ? '' : 's'}.`
+        : 'No installations found. Check that the SD card is inserted, or browse for the folder.'}</p>}
       {discovery?.warnings.map(warning => <p key={warning}>{warning}</p>)}
-      <ToggleField label="Use a custom location" description="Advanced: for installations the scan cannot find."
-        checked={manualPath} disabled={!!busy} onChange={enabled => {
-          setManualPath(enabled);
-          if (!enabled && !choices.some(choice => choice.data === path)) {
-            setPath(settings?.path ?? ''); setFlavor(settings?.flavor ?? 0);
-          }
-        }} />
-      {manualPath && <PanelSectionRow><TextField label="Custom WoW folder" value={path} disabled={!!busy}
-        onChange={(e) => {setPath(e.target.value); setFlavor(0);}} /></PanelSectionRow>}
-      {button('Show my addons', async () => {
-        const saved = await unwrap(configureLocal(path));
-        setSettings(saved); setPath(saved.path); setFlavor(saved.flavor);
-        setResults([]); setSearched(false); setOffset(0);
-        setLibrary(await unwrap(installed(false))); setTab('installed');
-        setNotice('Local addon scan complete.');
-      }, !path)}
-      <p>An API key is only needed to search CurseForge, download addons, and check online updates. Create your own free key at console.curseforge.com: sign in, open API keys, and copy the key. Saving it in a text file is easier than typing it here.</p>
-      {!settings?.hasKey && button('Open console.curseforge.com', async () => Navigation.NavigateToExternalWeb('https://console.curseforge.com/'))}
-      <PanelSectionRow><TextField label={settings?.hasKey ? 'API key (saved; leave blank to keep)' : 'CurseForge API key'}
-        value={key} bIsPassword disabled={!!busy} onChange={(e) => setKey(e.target.value)} /></PanelSectionRow>
-      {button('Load API key from a text file', async () => {
+    </PanelSection>
+    <PanelSection title="2. Pick your version">
+      {choices.length ? <>
+        <DropdownItem label="WoW version" selectedOption={path} strDefaultLabel="Choose a version"
+          disabled={!!busy} rgOptions={choices} onChange={option => {setPath(option.data); setFlavor(0);}} />
+        {path && <p style={{overflowWrap:'anywhere', fontSize:12, color:'#b8bfc9'}}>{path}</p>}
+      </> : <p>Find your installation first.</p>}
+    </PanelSection>
+    <PanelSection title="3. Add your CurseForge API key">
+      {settings?.hasKey
+        ? <p>Your API key is saved.</p>
+        : <>
+          <p>Create a free key at console.curseforge.com under API keys. Save it in a text file on the Deck and load it here.</p>
+          {button('Open console.curseforge.com', async () => Navigation.NavigateToExternalWeb('https://console.curseforge.com/'))}
+        </>}
+      {button(settings?.hasKey ? 'Replace key from a text file' : 'Load key from a text file', async () => {
         let selected;
         try {
           const start = await home().catch(() => '/home/deck');
@@ -244,25 +248,31 @@ function Content() {
           throw error;
         }
         if (!selected?.path && !selected?.realpath) return;
-        setKey(await unwrap(keyFromFile(selected.realpath || selected.path)));
+        changeKey(await unwrap(keyFromFile(selected.realpath || selected.path)));
       })}
-      {key && <p role="status">A key is entered but not saved yet. Load WoW editions, then Save setup to store it.</p>}
-      <p>The file should contain the key and nothing else. The key is stored on this Deck and only sent to CurseForge.</p>
-      {button('Load WoW editions', async () => setTypes(await unwrap(editions(key))))}
-      {types.length > 0 && <DropdownItem label="WoW edition" selectedOption={flavor} disabled={!!busy}
+      {!settings?.hasKey && <PanelSectionRow><TextField label="Or type the key" value={key} bIsPassword
+        disabled={!!busy} onChange={(e) => changeKey(e.target.value)} /></PanelSectionRow>}
+      {keyStatus && <p role="status" style={keyStatus.ok ? undefined : {color:'#ffb4a9', overflowWrap:'anywhere'}}>{keyStatus.text}</p>}
+      {types.length > 0 && path && <DropdownItem label="CurseForge edition" selectedOption={flavor}
+        strDefaultLabel="Choose the edition" disabled={!!busy}
         rgOptions={types.map(t => ({data:t.id,label:t.name}))} onChange={(option) => setFlavor(option.data)} />}
-      {button('Save setup', async () => {
+    </PanelSection>
+    <PanelSection title={settings?.path && settings?.hasKey && settings?.flavor ? '4. Sync' : '4. First-time sync'}>
+      <p>Saves your setup, recognises the addons you already have, and checks them for updates. Your addon files are not changed.</p>
+      {button('Sync my addons', async () => {
         const saved = await unwrap(configure(path, flavor, key));
         setSettings(saved); setKey(''); setResults([]); setSearched(false);
-        setLibrary(await unwrap(installed(false))); setTab('installed'); setNotice('Setup saved.');
-      }, !path || !flavor)}
-      </>}
-    </PanelSection>}
-    {tab === 'browse' && <PanelSection title={settings?.demo ? 'Find addons · Offline demo' : 'Find addons · CurseForge'}>
+        const checked = await unwrap(installed(true));
+        setLibrary(checked); setTab('installed');
+        setNotice(`Setup saved. ${syncSummary(checked)}`);
+      }, !path || !flavor || (!key && !settings?.hasKey))}
+    </PanelSection>
+    </>}
+    {tab === 'browse' && <PanelSection title="Find addons · CurseForge">
       <PanelSectionRow><TextField label="Addon name" value={query} disabled={!!busy}
         onChange={(e) => {setQuery(e.target.value); setOffset(0); setSearched(false); setResults([]);}} /></PanelSectionRow>
-      {!settings?.demo && (!settings?.hasKey || !settings?.flavor) && <p>Save your CurseForge API key (free from console.curseforge.com) and select your WoW edition in Setup to search online. Existing addons can be viewed without a key in My addons.</p>}
-      {button('Search', () => browse(0), !settings?.path || (!settings?.demo && (!settings?.hasKey || !settings?.flavor)))}
+      {(!settings?.hasKey || !settings?.flavor) && <p>Finish Setup to search CurseForge.</p>}
+      {button('Search', () => browse(0), !settings?.path || !settings?.hasKey || !settings?.flavor)}
       {searched && !results.length && <p>No addons found for this search and edition.</p>}
       {results.length > 0 && <p style={{fontSize:12, color:'#b8bfc9'}}>Select an addon to show its description.</p>}
       {results.map(mod => <AddonCard key={mod.id} name={mod.name} icon={mod.logo || ''}
@@ -279,19 +289,8 @@ function Content() {
       {button('Check for updates', async () => {
         const checked = await unwrap(installed(true));
         setLibrary(checked);
-        const found = checked.addons.filter(a => a.update && !a.blocked).length;
-        const blockedUpdates = checked.addons.filter(a => a.update && a.blocked).length;
-        const failed = checked.addons.filter(a => a.error).length;
-        const outside = checked.localAddons?.length ?? checked.unmanaged.length;
-        const matched = checked.matching?.matched ?? 0;
-        const parts = [];
-        if (matched) parts.push(`Recognised ${matched} addon(s) on CurseForge.`);
-        if (!checked.addons.length) parts.push('No addons could be checked.');
-        else parts.push(`${found ? `${found} update(s) available` : 'Everything checked is up to date'} (${checked.addons.length} checked${failed ? `, ${failed} need attention` : ''}).`);
-        if (blockedUpdates) parts.push(`${blockedUpdates} more can only be updated through the CurseForge app.`);
-        if (outside) parts.push(`${outside} folder(s) were not recognised and cannot be updated here.`);
-        setNotice(parts.join(' '));
-      }, !settings?.path || (!settings?.demo && (!settings?.hasKey || !settings?.flavor)))}
+        setNotice(syncSummary(checked));
+      }, !settings?.path || !settings?.hasKey || !settings?.flavor)}
       {button('Update all', async () => {
         const updates = library.addons.filter(a => a.update && !a.blocked);
         const failures: string[] = [];

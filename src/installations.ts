@@ -29,3 +29,15 @@ export function installationOptions(installations: Installation[], savedPath: st
       + (item.source === 'Saved location' ? ' · saved location' : '')};
   });
 }
+
+// The CurseForge edition for an installation folder, or 0 when it is not certain.
+// _classic_ follows Blizzard's current progression realm, so the player picks that one.
+export function editionFor(path: string, editions: {id: number; name: string}[]): number {
+  const folder = (path.replace(/\/+$/, '').split('/').pop() ?? '').toLowerCase();
+  const names: Record<string, RegExp> = {
+    _retail_: /^wow retail$/i, _classic_era_: /^wow classic$/i, _forever_: /^wow forever$/i,
+  };
+  const pattern = names[folder];
+  const matches = pattern ? editions.filter(edition => pattern.test(edition.name.trim())) : [];
+  return matches.length === 1 ? matches[0].id : 0;
+}
