@@ -53,7 +53,7 @@ Request an API key approved for third-party use through [CurseForge's API applic
 
 Once your key is approved:
 
-1. Open **Setup** and enter your **CurseForge API key**.
+1. Open **Setup** and enter your **CurseForge API key**, or choose **Load API key from a text file** and pick a file containing only the key.
 2. Select **Load WoW editions**.
 3. Choose the edition matching your selected WoW installation.
 4. Select **Save setup**.

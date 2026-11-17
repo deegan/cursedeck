@@ -1,6 +1,6 @@
 {
   "name": "cursedeck",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "type": "module",
   "description": "Manage World of Warcraft addons from Decky Loader",
   "scripts": {

@@ -70,6 +70,12 @@ class Plugin:
     async def discover(self, path=''):
         return await self._call('discover', path)
 
+    async def key_from_file(self, path):
+        return await self._call('key_from_file', path)
+
+    async def home(self):
+        return decky.DECKY_USER_HOME
+
     async def editions(self, key):
         return await self._call('editions', key)
 

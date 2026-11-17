@@ -7,7 +7,9 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from backend import Client, Manager, UserError, atomic_json, trusted_url, unpack
+import urllib.request
+
+from backend import Client, Manager, SafeRedirect, UserError, atomic_json, read_key_file, trusted_url, unpack
 
 
 def archive(files):
@@ -92,6 +94,38 @@ class BackendTests(unittest.TestCase):
     def test_no_key_exposed(self):
         self.assertNotIn('key', self.manager.status())
         self.assertEqual(self.manager.settings_file.stat().st_mode & 0o777, 0o600)
+
+    def sent_headers(self, url):
+        opener = unittest.mock.MagicMock()
+        opener.open.return_value.__enter__.return_value.read.return_value = b'{}'
+        with patch('urllib.request.build_opener', return_value=opener):
+            Client('secret-key').request(url, 100)
+        return {k.lower(): v for k, v in opener.open.call_args.args[0].header_items()}
+
+    def test_key_sent_only_to_api_host(self):
+        self.assertEqual(self.sent_headers('https://api.curseforge.com/v1/games')['x-api-key'], 'secret-key')
+        self.assertNotIn('x-api-key', self.sent_headers('https://edge.forgecdn.net/example.zip'))
+
+    def test_key_dropped_on_redirect_to_cdn(self):
+        request = urllib.request.Request('https://api.curseforge.com/v1/x', headers={'x-api-key': 'secret-key'})
+        handler = SafeRedirect()
+        cdn = handler.redirect_request(request, None, 302, 'Found', {}, 'https://edge.forgecdn.net/example.zip')
+        self.assertNotIn('x-api-key', [k.lower() for k, _ in cdn.header_items()])
+        api = handler.redirect_request(request, None, 302, 'Found', {}, 'https://api.curseforge.com/v1/y')
+        self.assertIn('x-api-key', [k.lower() for k, _ in api.header_items()])
+
+    def test_key_file(self):
+        good = self.root / 'key.txt'
+        good.write_text('\ufeff$2a$10$abcdefghijklmnopqrstuvwxyz0123456789\r\n\n', encoding='utf-8')
+        self.assertEqual(read_key_file(str(good)), '$2a$10$abcdefghijklmnopqrstuvwxyz0123456789')
+        for name, contents in (('short.txt', b'abc'), ('two.txt', b'key: ' + b'a' * 40), ('bin.txt', b'\xff\xfe' * 30),
+                               ('big.txt', b'a' * 5000)):
+            (self.root / name).write_bytes(contents)
+            with self.assertRaises(UserError):
+                read_key_file(str(self.root / name))
+        for path in (str(self.root), str(self.root / 'missing.txt'), 'key.txt'):
+            with self.assertRaises(UserError):
+                read_key_file(path)
 
     def test_trusted_hosts(self):
         self.assertTrue(trusted_url('https://edge.forgecdn.net/a'))

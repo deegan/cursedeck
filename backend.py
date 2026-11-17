@@ -30,11 +30,36 @@ def trusted_url(url):
             and (host == 'api.curseforge.com' or host.endswith('.forgecdn.net')))
 
 
+def api_url(url):
+    """The API key is only ever sent to this host, never to download CDNs."""
+    return trusted_url(url) and urllib.parse.urlsplit(url).hostname == 'api.curseforge.com'
+
+
+def read_key_file(path):
+    """Return the API key stored in a text file the user picked: its first non-empty line."""
+    file = Path(path).expanduser()
+    try:
+        if not file.is_absolute() or not file.is_file() or file.stat().st_size > 4096:
+            raise UserError('Select a small text file containing only your CurseForge API key.')
+        lines = file.read_text(encoding='utf-8-sig').split()
+    except (OSError, UnicodeDecodeError):
+        raise UserError('Could not read that file as text.') from None
+    key = lines[0] if len(lines) == 1 else ''
+    if not 20 <= len(key) <= 200 or not key.isprintable():
+        raise UserError('That file does not contain a CurseForge API key. It should hold the key and nothing else.')
+    return key
+
+
 class SafeRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         if not trusted_url(newurl):
             raise UserError('Download redirected outside CurseForge; request refused.')
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None and not api_url(newurl):
+            for store in (redirected.headers, redirected.unredirected_hdrs):
+                for name in [n for n in store if n.lower() == 'x-api-key']:
+                    del store[name]
+        return redirected
 
 
 def atomic_json(path, data):
@@ -60,8 +85,9 @@ class Client:
             raise UserError('Save a CurseForge API key in Setup first.')
         if not trusted_url(url):
             raise UserError('CurseForge returned an unsupported download URL.')
-        request = urllib.request.Request(url, headers={
-            'x-api-key': self.key, 'User-Agent': 'CurseDeck/0.1', 'Accept': '*/*'})
+        request = urllib.request.Request(url, headers={'User-Agent': 'CurseDeck/0.1', 'Accept': '*/*'})
+        if api_url(url):
+            request.add_header('x-api-key', self.key)
         try:
             with urllib.request.build_opener(SafeRedirect()).open(request, timeout=45) as response:
                 body = response.read(limit + 1)
@@ -257,6 +283,9 @@ class Manager:
     def status(self):
         settings = self.settings()
         return {'path': settings['path'], 'flavor': settings['flavor'], 'hasKey': bool(settings['key'])}
+
+    def key_from_file(self, path):
+        return read_key_file(path)
 
     def editions(self, key):
         return self.client_factory(key.strip() or self.settings()['key']).api(f'games/{GAME_ID}/version-types')

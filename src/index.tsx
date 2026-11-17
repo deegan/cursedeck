@@ -24,6 +24,8 @@ const configureLocal = callable<[string], Reply<Settings>>('configure_local');
 const configure = callable<[string, number, string], Reply<Settings>>('configure');
 const discoverIn = callable<[string], Reply<Discovery>>('discover');
 const discover = callable<[], Reply<Discovery>>('discover');
+const keyFromFile = callable<[string], Reply<string>>('key_from_file');
+const home = callable<[], string>('home');
 const editions = callable<[string], Reply<Edition[]>>('editions');
 const search = callable<[string, number], Reply<Mod[]>>('search');
 const installed = callable<[boolean], Reply<Library>>('installed');
@@ -209,7 +211,20 @@ function Content() {
       <p>An API key is only needed to search CurseForge, download addons, and check online updates.</p>
       <PanelSectionRow><TextField label={settings?.hasKey ? 'API key (saved; leave blank to keep)' : 'CurseForge API key'}
         value={key} bIsPassword disabled={!!busy} onChange={(e) => setKey(e.target.value)} /></PanelSectionRow>
-      <p>Use a key approved by CurseForge for third-party API access. It is stored locally and is never included in the plugin bundle.</p>
+      {button('Load API key from a text file', async () => {
+        let selected;
+        try {
+          const start = await home().catch(() => '/home/deck');
+          selected = await openFilePicker(FileSelectionType.FILE, start || '/home/deck', true, true, undefined, undefined, false, true);
+        } catch (error) {
+          if (String(error).toLowerCase().includes('cancel')) return;
+          throw error;
+        }
+        if (!selected?.path && !selected?.realpath) return;
+        setKey(await unwrap(keyFromFile(selected.realpath || selected.path)));
+        setNotice('API key loaded from file. Load WoW editions, then Save setup to store it.');
+      })}
+      <p>The file should contain the key and nothing else. Use a key approved by CurseForge for third-party API access. It is stored locally and is never included in the plugin bundle.</p>
       {button('Load WoW editions', async () => setTypes(await unwrap(editions(key))))}
       {types.length > 0 && <DropdownItem label="WoW edition" selectedOption={flavor} disabled={!!busy}
         rgOptions={types.map(t => ({data:t.id,label:t.name}))} onChange={(option) => setFlavor(option.data)} />}
