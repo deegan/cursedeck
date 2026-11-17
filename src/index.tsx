@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { forgetAll, remembered, usePersistentState } from './persistentState';
 import { ButtonItem, DialogButton, DropdownItem, PanelSection, PanelSectionRow, TextField, ToggleField, staticClasses } from '@decky/ui';
 import { callable, definePlugin, toaster, openFilePicker, FileSelectionType } from '@decky/api';
 import { PluginUpdate, requestPluginUpdate, deckyInstallerBridge } from './pluginUpdates';
@@ -39,18 +40,18 @@ async function unwrap<T>(promise: Promise<Reply<T>>): Promise<T> {
 function Content() {
   const [pluginUpdate, setPluginUpdate] = useState<PluginUpdate>();
   const [updateError, setUpdateError] = useState('');
-  const [tab, setTab] = useState('installed');
+  const [tab, setTab] = usePersistentState('tab', 'installed');
   const [settings, setSettings] = useState<Settings>();
-  const [discovery, setDiscovery] = useState<Discovery>();
-  const [manualPath, setManualPath] = useState(false);
-  const [path, setPath] = useState('');
-  const [key, setKey] = useState('');
-  const [flavor, setFlavor] = useState(0);
-  const [types, setTypes] = useState<Edition[]>([]);
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Mod[]>([]);
-  const [offset, setOffset] = useState(0);
-  const [searched, setSearched] = useState(false);
+  const [discovery, setDiscovery] = usePersistentState<Discovery | undefined>('discovery', undefined);
+  const [manualPath, setManualPath] = usePersistentState('manualPath', false);
+  const [path, setPath] = usePersistentState('path', '');
+  const [key, setKey] = usePersistentState('key', '');
+  const [flavor, setFlavor] = usePersistentState('flavor', 0);
+  const [types, setTypes] = usePersistentState<Edition[]>('types', []);
+  const [query, setQuery] = usePersistentState('query', '');
+  const [results, setResults] = usePersistentState<Mod[]>('results', []);
+  const [offset, setOffset] = usePersistentState('offset', 0);
+  const [searched, setSearched] = usePersistentState('searched', false);
   const [library, setLibrary] = useState<Library>({ addons: [], unmanaged: [] });
   const running = useRef(false);
   const [busy, setBusy] = useState('');
@@ -76,9 +77,11 @@ function Content() {
   useEffect(() => {
     void run('Loading…', async () => {
       const saved = await unwrap(status());
-      setSettings(saved); setPath(saved.path); setFlavor(saved.flavor);
+      setSettings(saved);
+      // Decky rebuilds this panel whenever Quick Access reopens; keep unsaved Setup choices.
+      if (!remembered('path')) { setPath(saved.path); setFlavor(saved.flavor); }
       if (saved.path) setLibrary(await unwrap(installed(false)));
-      else { setTab('setup'); await scanInstallations(saved.path); }
+      else if (!remembered('tab')) { setTab('setup'); await scanInstallations(saved.path); }
     });
   }, []);
   const button = (label: string, action: () => Promise<void>, disabled = false) => (
@@ -222,8 +225,8 @@ function Content() {
         }
         if (!selected?.path && !selected?.realpath) return;
         setKey(await unwrap(keyFromFile(selected.realpath || selected.path)));
-        setNotice('API key loaded from file. Load WoW editions, then Save setup to store it.');
       })}
+      {key && <p role="status">A key is entered but not saved yet. Load WoW editions, then Save setup to store it.</p>}
       <p>The file should contain the key and nothing else. Use a key approved by CurseForge for third-party API access. It is stored locally and is never included in the plugin bundle.</p>
       {button('Load WoW editions', async () => setTypes(await unwrap(editions(key))))}
       {types.length > 0 && <DropdownItem label="WoW edition" selectedOption={flavor} disabled={!!busy}
@@ -309,6 +312,6 @@ export default definePlugin(() => {
   return {
   name: 'CurseDeck', titleView: <div className={staticClasses.Title}>CurseDeck</div>,
   content: <Content />, icon: <FaBoxOpen />,
-  onDismount() { stopped = true; clearInterval(timer); },
+  onDismount() { stopped = true; clearInterval(timer); forgetAll(); },
 };
 });
