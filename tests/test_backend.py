@@ -9,7 +9,7 @@ import zipfile
 
 import urllib.request
 
-from backend import Client, Manager, SafeRedirect, UserError, atomic_json, read_key_file, trusted_url, unpack
+from backend import Client, Manager, SafeRedirect, UserError, atomic_json, download_page, read_key_file, trusted_url, unpack
 
 
 def archive(files):
@@ -77,6 +77,60 @@ class BackendTests(unittest.TestCase):
             '99': {'id': 99, 'name': 'Trace', 'fileId': 1, 'version': '1', 'folders': ['Example']}}})
         self.manager.install(10)
         self.assertEqual(list(json.loads((self.addons / '.cursedeck.json').read_text())['addons']), ['10'])
+
+    def block_downloads(self, *ids):
+        names = {10: 'Example', 11: 'Library'}
+        self.client.api.side_effect = lambda route, **_: {
+            'id': int(route.split('/')[1]), 'name': names.get(int(route.split('/')[1]), 'Other'), 'gameId': 1,
+            'allowModDistribution': int(route.split('/')[1]) not in ids}
+        self.file['fileName'] = 'Example-2.0.zip'
+
+    def downloaded(self, data):
+        path = self.root / 'Downloads' / 'Example-2.0.zip'
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(data)
+        return str(path)
+
+    def test_blocked_addon_needs_a_downloaded_file(self):
+        self.block_downloads(10)
+        with self.assertRaisesRegex(UserError, 'only be downloaded through CurseForge'):
+            self.manager.install(10)
+        self.client.request.assert_not_called()
+
+    def test_verified_download_installs_without_network_download(self):
+        self.block_downloads(10)
+        result = self.manager.install(10, self.downloaded(self.data))
+        self.client.request.assert_not_called()
+        self.assertEqual(result['addons'][0]['fileId'], 20)
+        self.assertEqual((self.addons / 'Example' / 'core.lua').read_text(), 'new')
+
+    def test_wrong_download_is_refused_and_changes_nothing(self):
+        self.block_downloads(10)
+        other = archive({'Example/Example.toc': '## Interface: 120000', 'Example/core.lua': 'tampered'})
+        for data in (other, self.data[:-1] + b'x'):
+            with self.subTest(size=len(data)), self.assertRaisesRegex(UserError, 'not Example-2.0.zip'):
+                self.manager.install(10, self.downloaded(data))
+        self.assertFalse((self.addons / 'Example').exists())
+        for bad in ('relative.zip', str(self.root / 'missing.zip'), str(self.root)):
+            with self.subTest(path=bad), self.assertRaises(UserError):
+                self.manager.install(10, bad)
+
+    def test_blocked_dependency_must_already_be_installed(self):
+        self.block_downloads(11)
+        self.file['dependencies'] = [{'modId': 11, 'relationType': 3}]
+        with self.assertRaisesRegex(UserError, 'Library is required'):
+            self.manager.install(10)
+        atomic_json(self.addons / '.cursedeck.json', {'flavor': 517, 'addons': {
+            '11': {'id': 11, 'name': 'Library', 'fileId': 1, 'version': '1', 'folders': ['Library']}}})
+        self.manager.install(10)
+        self.assertEqual(self.client.request.call_count, 1)  # Only Example was downloaded.
+
+    def test_download_page_only_links_to_curseforge(self):
+        self.assertEqual(download_page('https://www.curseforge.com/wow/addons/baganator', 9659116),
+                         'https://www.curseforge.com/wow/addons/baganator/download/9659116')
+        for site in ('http://www.curseforge.com/wow/addons/x', 'https://evil.com/wow/addons/x',
+                     'https://www.curseforge.com/wow/addons/x?next=evil', 'https://www.curseforge.com/../x', None):
+            self.assertEqual(download_page(site, 1), '')
 
     def test_bad_checksum_changes_nothing(self):
         self.file['hashes'][0]['value'] = 'bad'

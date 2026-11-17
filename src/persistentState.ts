@@ -10,6 +10,10 @@ export function remembered(name: string): boolean {
   return store.has(name);
 }
 
+export function peek<T>(name: string): T | undefined {
+  return store.get(name) as T | undefined;
+}
+
 export function forgetAll(): void {
   store.clear();
 }

@@ -1,7 +1,8 @@
 Update the addons you already have, and keep your place when Quick Access closes.
 
 - **Check for updates** now recognises addons installed another way. CurseDeck fingerprints each addon folder like the CurseForge app does, matches it to its CurseForge release, and then offers updates for it. Nothing changes on disk until you update. Edited folders are not matched and are left alone.
-- Addons whose authors only allow downloads through CurseForge's own app show their available update without an Update button.
+- Addons whose authors only allow downloads through CurseForge's own app or website (such as Baganator and Syndicator) get **Open download page** and **Install downloaded ZIP**. Download the file from CurseForge, choose it, and CurseDeck installs it after checking its size and checksums match the release CurseForge lists.
+- Updating one addon no longer hides the updates found for the others.
 - When one addon's release bundles a folder another managed addon also provides (Questie now includes QuestieTrace), installing it takes that folder over instead of failing. Folders CurseDeck does not manage are still never overwritten.
 - The update check reports what it covered.
 - Addons whose downloads include hidden files, such as a stray .gitignore, now install instead of being rejected as unsafe.

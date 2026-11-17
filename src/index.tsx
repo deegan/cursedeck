@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { forgetAll, remembered, usePersistentState } from './persistentState';
-import { ButtonItem, DialogButton, DropdownItem, PanelSection, PanelSectionRow, TextField, ToggleField, staticClasses } from '@decky/ui';
+import { forgetAll, peek, remembered, usePersistentState } from './persistentState';
+import { Installed, Library, keepChecked } from './library';
+import { ButtonItem, DialogButton, DropdownItem, Navigation, PanelSection, PanelSectionRow, TextField, ToggleField, staticClasses } from '@decky/ui';
 import { callable, definePlugin, toaster, openFilePicker, FileSelectionType } from '@decky/api';
 import { PluginUpdate, requestPluginUpdate, deckyInstallerBridge } from './pluginUpdates';
 import { installationOptions } from './installations';
@@ -12,8 +13,6 @@ type Settings = { path: string; flavor: number; hasKey: boolean; demo: boolean }
 type Discovery = { installations: {path: string; label: string; source: string}[]; warnings: string[]; limited: boolean; scannedDirectories?: number };
 type Edition = { id: number; name: string };
 type Mod = { id: number; name: string; summary: string };
-type Installed = { id: number; name: string; version: string; update: string | null; error: string | null; missing: boolean; adopted?: boolean; blocked?: boolean };
-type Library = { addons: Installed[]; unmanaged: string[]; path?: string; matching?: {matched: number; unmatched: string[]; modified: string[]}; localAddons?: {folder: string; name: string; version: string | null; notes: string; error: string | null}[] };
 const handoffFailed = callable<[string], Reply<PluginUpdate>>('update_handoff_failed');
 const updateStatus = callable<[], Reply<PluginUpdate>>('plugin_update_status');
 const preparePluginUpdate = callable<[], Reply<PluginUpdate>>('prepare_plugin_update');
@@ -31,6 +30,7 @@ const editions = callable<[string], Reply<Edition[]>>('editions');
 const search = callable<[string, number], Reply<Mod[]>>('search');
 const installed = callable<[boolean], Reply<Library>>('installed');
 const install = callable<[number], Reply<Library>>('install');
+const installDownload = callable<[number, string], Reply<Library>>('install_download');
 async function unwrap<T>(promise: Promise<Reply<T>>): Promise<T> {
   const reply = await promise;
   if (!reply.ok) throw new Error(reply.error);
@@ -52,11 +52,11 @@ function Content() {
   const [results, setResults] = usePersistentState<Mod[]>('results', []);
   const [offset, setOffset] = usePersistentState('offset', 0);
   const [searched, setSearched] = usePersistentState('searched', false);
-  const [library, setLibrary] = useState<Library>({ addons: [], unmanaged: [] });
+  const [library, setLibrary] = usePersistentState<Library>('library', { addons: [], unmanaged: [] });
   const running = useRef(false);
-  const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = usePersistentState('busy', '');
+  const [error, setError] = usePersistentState('error', '');
+  const [notice, setNotice] = usePersistentState('notice', '');
   async function run(label: string, action: () => Promise<void>) {
     if (running.current) return;
     running.current = true;
@@ -100,11 +100,29 @@ function Content() {
     setResults(await unwrap(search(query, index))); setOffset(index); setSearched(true);
   }
   async function add(id: number) {
-    setLibrary(await unwrap(install(id))); setNotice('Addon and required dependencies installed.');
+    const next = await unwrap(install(id));
+    setLibrary(keepChecked(peek<Library>('library') ?? library, next)); setNotice('Addon and required dependencies installed.');
   }
   const addonAction = (label: string, id: number) => <DialogButton disabled={!!busy}
     style={{ width: '100%', minWidth: 0, padding: '6px 8px', fontSize: 13, boxSizing: 'border-box' }}
     onClick={() => void run(label + '…', () => add(id))}>{label}</DialogButton>;
+  const smallButton = (label: string, action: () => Promise<void>) => <DialogButton disabled={!!busy}
+    style={{ width: '100%', minWidth: 0, padding: '6px 8px', fontSize: 13, boxSizing: 'border-box', marginTop: 6 }}
+    onClick={() => void run(label + '…', action)}>{label}</DialogButton>;
+  async function installDownloaded(mod: Installed) {
+    let selected;
+    try {
+      const start = await home().catch(() => '/home/deck');
+      selected = await openFilePicker(FileSelectionType.FILE, `${start || '/home/deck'}/Downloads`, true, true, undefined, ['zip'], false, false);
+    } catch (error) {
+      if (String(error).toLowerCase().includes('cancel')) return;
+      throw error;
+    }
+    if (!selected?.path && !selected?.realpath) return;
+    const next = await unwrap(installDownload(mod.id, selected.realpath || selected.path));
+    setLibrary(keepChecked(peek<Library>('library') ?? library, next));
+    setNotice(`${mod.name} ${mod.update ?? ''} installed from the downloaded file.`);
+  }
   return <>
     <PanelSection>
       {settings?.demo && <>
@@ -292,7 +310,15 @@ function Content() {
         action={mod.update && !mod.blocked ? addonAction('Update', mod.id) : undefined}>
         <div>{mod.adopted ? 'Recognised on CurseForge; updates through CurseDeck replace its folders' : 'Managed by CurseDeck'}</div>
         {mod.update && <div style={{marginTop:6}}>Available: {mod.update}</div>}
-        {mod.blocked && <div style={{marginTop:6}}>The author only allows downloads through CurseForge's own app or website, so CurseDeck cannot install it.</div>}
+        {mod.blocked && <div style={{marginTop:6}}>The author only allows downloads through CurseForge's own app or website, so CurseDeck cannot download it.</div>}
+        {mod.blocked && mod.update && <>
+          <div style={{marginTop:6}}>Download {mod.download?.fileName || 'the release'} from CurseForge, then choose it here. CurseDeck checks it is exactly that release before installing.</div>
+          {mod.download?.page && <>
+            <div style={{marginTop:6, overflowWrap:'anywhere', fontSize:12}}>{mod.download.page}</div>
+            {smallButton('Open download page', async () => Navigation.NavigateToExternalWeb(mod.download!.page))}
+          </>}
+          {smallButton('Install downloaded ZIP', () => installDownloaded(mod))}
+        </>}
         {mod.error && <div style={{marginTop:6, color:'#ffb4a9'}}>{mod.error}</div>}
         {!mod.update && !mod.blocked && <div style={{marginTop:8}}>{addonAction('Repair / reinstall', mod.id)}</div>}
       </AddonCard>)}

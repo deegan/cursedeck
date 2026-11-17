@@ -47,7 +47,7 @@ Addons already present in your WoW folder show **Installed outside CurseDeck** i
 
 **My addons → Check for updates** also recognises existing addons. CurseDeck fingerprints each folder the way the CurseForge app does and asks CurseForge which release it is. An addon that matches a release exactly is listed as **Recognised on CurseForge** and can be updated like one CurseDeck installed: updating replaces its folders with the new release. Nothing on disk changes until you choose to update. Folders that were edited or come from elsewhere do not match and are left alone.
 
-Some authors only allow downloads through CurseForge's own app or website. CurseDeck shows when those addons have an update, but cannot install it.
+Some authors only allow downloads through CurseForge's own app or website. For those addons, CurseDeck shows **Open download page** and **Install downloaded ZIP**: download the file from CurseForge, then choose it. CurseDeck installs it only if its size and checksums match the release CurseForge lists. If Steam's browser does not save the download, use a browser in Desktop Mode; the file can be anywhere on the Deck.
 
 ## Connect to CurseForge
 

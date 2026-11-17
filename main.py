@@ -88,6 +88,9 @@ class Plugin:
     async def install(self, mod_id):
         return await self._call('install', mod_id)
 
+    async def install_download(self, mod_id, path):
+        return await self._call('install', mod_id, path)
+
     async def check_plugin_update(self, force=False):
         try:
             return {'ok': True, 'data': await asyncio.to_thread(self.updater.check, force)}

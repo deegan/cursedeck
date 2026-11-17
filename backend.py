@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 import shutil
 import ssl
@@ -94,6 +95,21 @@ class SafeRedirect(urllib.request.HTTPRedirectHandler):
                 for name in [n for n in store if n.lower() == 'x-api-key']:
                     del store[name]
         return redirected
+
+
+def hashes_match(data, file):
+    hashes = [h for h in file.get('hashes', []) if h.get('algo') in (1, 2) and isinstance(h.get('value'), str)]
+    return bool(hashes) and all(
+        hashlib.new('sha1' if h['algo'] == 1 else 'md5', data).hexdigest().lower() == h['value'].lower() for h in hashes)
+
+
+def download_page(website, file_id):
+    """CurseForge's own download page for one file, or '' when the project link is unexpected."""
+    parsed = urllib.parse.urlsplit(website or '')
+    if (parsed.scheme != 'https' or parsed.hostname != 'www.curseforge.com' or parsed.query or parsed.fragment
+            or not re.fullmatch(r'/wow/addons/[a-z0-9-]+', parsed.path or '') or not isinstance(file_id, int)):
+        return ''
+    return f'https://www.curseforge.com{parsed.path}/download/{file_id}'
 
 
 def atomic_json(path, data):
@@ -445,11 +461,12 @@ class Manager:
             if check:
                 matching = self.match_existing(root, state, self.client())
             result = []
-            blocked = set()
+            blocked = {}
             if check and state['addons']:
                 try:
                     projects = self.client().post('mods', {'modIds': [m['id'] for m in state['addons'].values()]})
-                    blocked = {m.get('id') for m in projects if m.get('allowModDistribution') is False}
+                    blocked = {m.get('id'): (m.get('links') or {}).get('websiteUrl') for m in projects
+                               if m.get('allowModDistribution') is False}
                 except UserError:
                     pass  # Installing still checks each project before downloading.
             for mod in state['addons'].values():
@@ -462,6 +479,9 @@ class Manager:
                         latest = self.client().latest(mod['id'], state['flavor'])
                         if latest['id'] > mod['fileId']:
                             item['update'] = latest['displayName']
+                            if item['blocked']:
+                                item['download'] = {'fileName': str(latest.get('fileName') or ''),
+                                                    'page': download_page(blocked[mod['id']], latest['id'])}
                     except UserError as error:
                         item['error'] = str(error)
                 result.append(item)
@@ -475,7 +495,24 @@ class Manager:
                 library['matching'] = matching
             return library
 
-    def install(self, mod_id):
+    def install(self, mod_id, downloaded=None):
+        """Install a project and its required dependencies.
+
+        ``downloaded`` is a ZIP the player fetched from CurseForge's website for a
+        project whose author disallows third-party downloads. It is installed only
+        if its size and checksums match the release CurseForge lists.
+        """
+        local = None
+        if downloaded:
+            path = Path(downloaded)
+            try:
+                if not path.is_absolute() or not path.is_file() or path.suffix.lower() != '.zip':
+                    raise UserError('Choose the addon ZIP file you downloaded.')
+                if path.stat().st_size > MAX_DOWNLOAD:
+                    raise UserError('Download exceeds the supported size limit.')
+                local = path.read_bytes()
+            except OSError:
+                raise UserError('Could not read that ZIP file.') from None
         with self.lock:
             if not self.settings()['flavor']:
                 raise UserError('Select and save your CurseForge WoW edition in Setup before installing addons.')
@@ -484,21 +521,36 @@ class Manager:
             client = self.client()
             plan = {}
 
+            requested = int(mod_id)
+
             def resolve(project_id):
                 if project_id in plan:
                     return
                 if len(plan) >= 40:
                     raise UserError('Dependency tree is too large.')
                 mod = client.api(f'mods/{project_id}')
-                if mod['gameId'] != GAME_ID or mod.get('allowModDistribution') is False:
+                if mod['gameId'] != GAME_ID:
                     raise UserError('This addon is not available for third-party WoW installation.')
-                file = client.latest(project_id, state['flavor'])
-                plan[project_id] = (mod, file)
-                for dependency in file.get('dependencies', []):
+                file = None
+                if mod.get('allowModDistribution') is False:
+                    if project_id != requested:
+                        if str(project_id) in state['addons']:
+                            return  # Keep the installed copy; it is updated through its own download.
+                        raise UserError(f'{mod["name"]} is required. Its author only allows downloads through '
+                                        'CurseForge, so install it first from its own downloaded ZIP.')
+                    if local is None:
+                        raise UserError(f'{mod["name"]} can only be downloaded through CurseForge. Open its download '
+                                        'page, then install the downloaded ZIP.')
+                    file = client.latest(project_id, state['flavor'])
+                    if len(local) != file['fileLength'] or not hashes_match(local, file):
+                        raise UserError(f'That ZIP is not {file.get("fileName") or "the expected release"}. Download '
+                                        'the file from the link shown and choose it again.')
+                plan[project_id] = (mod, file or client.latest(project_id, state['flavor']))
+                for dependency in plan[project_id][1].get('dependencies', []):
                     if dependency['relationType'] == 3:
                         resolve(dependency['modId'])
 
-            resolve(int(mod_id))
+            resolve(requested)
             # Stage all dependencies before touching the live installation.
             with tempfile.TemporaryDirectory(prefix='.cursedeck-', dir=root) as temp:
                 stage = Path(temp)
@@ -508,10 +560,13 @@ class Manager:
                     old = state['addons'].get(str(project_id))
                     if old and old['fileId'] > file['id']:
                         continue  # Never silently downgrade an installed release.
-                    url = file.get('downloadUrl') or client.api(f'mods/{project_id}/files/{file["id"]}/download-url')
-                    if not url:
-                        raise UserError(f'Download unavailable for {mod["name"]}.')
-                    data = client.request(url, MAX_DOWNLOAD)
+                    if project_id == requested and local is not None and mod.get('allowModDistribution') is False:
+                        data = local
+                    else:
+                        url = file.get('downloadUrl') or client.api(f'mods/{project_id}/files/{file["id"]}/download-url')
+                        if not url:
+                            raise UserError(f'Download unavailable for {mod["name"]}.')
+                        data = client.request(url, MAX_DOWNLOAD)
                     hashes = [h for h in file.get('hashes', []) if h['algo'] in (1, 2)]
                     if not hashes or len(data) != file['fileLength']:
                         raise UserError('Download size or checksum metadata is invalid.')

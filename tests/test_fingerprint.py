@@ -158,9 +158,12 @@ class MatchExistingTests(unittest.TestCase):
     def test_update_blocked_by_author_is_flagged(self):
         original = self.client.post.side_effect
         self.client.post.side_effect = lambda route, body: (
-            [{'id': 10, 'name': 'Pack Addon', 'allowModDistribution': False}] if route == 'mods' else original(route, body))
+            [{'id': 10, 'name': 'Pack Addon', 'allowModDistribution': False,
+              'links': {'websiteUrl': 'https://www.curseforge.com/wow/addons/pack'}}] if route == 'mods' else original(route, body))
+        self.client.latest.return_value = {'id': 501, 'displayName': '1.1', 'fileName': 'Pack-1.1.zip'}
         [pack] = self.manager.installed(check=True)['addons']
         self.assertEqual((pack['update'], pack['blocked']), ('1.1', True))
+        self.assertEqual(pack['download'], {'fileName': 'Pack-1.1.zip', 'page': 'https://www.curseforge.com/wow/addons/pack/download/501'})
 
     def test_plain_listing_never_contacts_curseforge(self):
         library = self.manager.installed(check=False)
