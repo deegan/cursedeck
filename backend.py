@@ -97,10 +97,29 @@ class SafeRedirect(urllib.request.HTTPRedirectHandler):
         return redirected
 
 
+def release_hashes(file):
+    """Return the supported checksums, or an empty list for unusable metadata."""
+    entries = file.get('hashes')
+    if not isinstance(entries, list):
+        return []
+    checksums = []
+    for entry in entries:
+        if not isinstance(entry, dict) or type(entry.get('algo')) is not int:
+            return []
+        if entry['algo'] not in (1, 2):
+            continue
+        algorithm, length = ('sha1', 40) if entry['algo'] == 1 else ('md5', 32)
+        digest = entry.get('value')
+        if not isinstance(digest, str) or len(digest) != length or not re.fullmatch('[0-9a-fA-F]+', digest):
+            return []
+        checksums.append((algorithm, digest.lower()))
+    return checksums
+
+
 def hashes_match(data, file):
-    hashes = [h for h in file.get('hashes', []) if h.get('algo') in (1, 2) and isinstance(h.get('value'), str)]
-    return bool(hashes) and all(
-        hashlib.new('sha1' if h['algo'] == 1 else 'md5', data).hexdigest().lower() == h['value'].lower() for h in hashes)
+    checksums = release_hashes(file)
+    return bool(checksums) and all(hashlib.new(algorithm, data).hexdigest() == digest
+                                   for algorithm, digest in checksums)
 
 
 def download_page(website, file_id):
@@ -259,8 +278,9 @@ def validate_registry(state):
 
 
 class Manager:
-    def __init__(self, settings_dir, client_factory=Client):
+    def __init__(self, settings_dir, client_factory=Client, downloads=None):
         self.client_factory = client_factory
+        self.downloads = Path(downloads) if downloads is not None else None
         self.settings_file = Path(settings_dir) / 'settings.json'
         self.lock = threading.RLock()
 
@@ -471,6 +491,8 @@ class Manager:
         return summary
 
     def installed(self, check=False):
+        from addon_releases import find_release_asset, local_release_zip
+
         with self.lock:
             root, state = self.state()
             matching = None
@@ -481,7 +503,7 @@ class Manager:
             if check and state['addons']:
                 try:
                     projects = self.client().post('mods', {'modIds': [m['id'] for m in state['addons'].values()]})
-                    blocked = {m.get('id'): (m.get('links') or {}).get('websiteUrl') for m in projects
+                    blocked = {m.get('id'): m.get('links') or {} for m in projects
                                if m.get('allowModDistribution') is False}
                     changed = False
                     for project in projects:
@@ -504,8 +526,13 @@ class Manager:
                         if latest['id'] > mod['fileId']:
                             item['update'] = latest['displayName']
                             if item['blocked']:
+                                links = blocked[mod['id']]
                                 item['download'] = {'fileName': str(latest.get('fileName') or ''),
-                                                    'page': download_page(blocked[mod['id']], latest['id'])}
+                                                    'page': download_page(links.get('websiteUrl'), latest['id'])}
+                                if local_release_zip(self.downloads, latest) is not None:
+                                    item['download']['localRelease'] = True
+                                elif find_release_asset(links.get('sourceUrl'), latest):
+                                    item['download']['authorRelease'] = True
                     except UserError as error:
                         item['error'] = str(error)
                 result.append(item)
@@ -519,12 +546,31 @@ class Manager:
                 library['matching'] = matching
             return library
 
+    def restricted_archive(self, mod, file, selected, dependency):
+        from addon_releases import download_release_asset, find_release_asset, local_release_zip
+
+        if selected is not None:
+            if len(selected) != file['fileLength'] or not hashes_match(selected, file):
+                raise UserError(f'That ZIP is not {file.get("fileName") or "the expected release"}. '
+                                'Download the file from the link shown and choose it again.')
+            return selected
+        data = local_release_zip(self.downloads, file)
+        if data is not None:
+            return data
+        asset = find_release_asset((mod.get('links') or {}).get('sourceUrl'), file)
+        if not asset:
+            reason = f'{mod["name"]} is required.' if dependency else f'No matching archive found for {mod["name"]}.'
+            raise UserError(f'{reason} Save the release ZIP from CurseForge to Downloads and try again.')
+        data = download_release_asset(asset, file['fileLength'])
+        if len(data) != file['fileLength'] or not hashes_match(data, file):
+            raise UserError(f'Download size or checksum failed for {mod["name"]}.')
+        return data
+
     def install(self, mod_id, downloaded=None):
         """Install a project and its required dependencies.
 
-        ``downloaded`` is a ZIP the player fetched from CurseForge's website for a
-        project whose author disallows third-party downloads. It is installed only
-        if its size and checksums match the release CurseForge lists.
+        Restricted projects use a local ZIP or an author-published GitHub release
+        asset. CurseForge identifies the exact build in both cases.
         """
         local = None
         if downloaded:
@@ -544,35 +590,26 @@ class Manager:
             self.root(create=True)
             client = self.client()
             plan = {}
-
+            seen = set()
             requested = int(mod_id)
 
             def resolve(project_id):
-                if project_id in plan:
+                if project_id in seen:
                     return
-                if len(plan) >= 40:
+                if len(seen) >= 40:
                     raise UserError('Dependency tree is too large.')
+                seen.add(project_id)
                 mod = client.api(f'mods/{project_id}')
                 if mod['gameId'] != GAME_ID:
                     raise UserError('This addon is not available for third-party WoW installation.')
-                file = None
-                if mod.get('allowModDistribution') is False:
-                    if project_id != requested:
-                        if str(project_id) in state['addons']:
-                            return  # Keep the installed copy; it is updated through its own download.
-                        raise UserError(f'{mod["name"]} is required. Its author only allows downloads through '
-                                        'CurseForge, so install it first from its own downloaded ZIP.')
-                    if local is None:
-                        raise UserError(f'{mod["name"]} can only be downloaded through CurseForge. Open its download '
-                                        'page, then install the downloaded ZIP.')
-                    file = client.latest(project_id, state['flavor'])
-                    if len(local) != file['fileLength'] or not hashes_match(local, file):
-                        raise UserError(f'That ZIP is not {file.get("fileName") or "the expected release"}. Download '
-                                        'the file from the link shown and choose it again.')
-                plan[project_id] = (mod, file or client.latest(project_id, state['flavor']))
-                for dependency in plan[project_id][1].get('dependencies', []):
+                restricted = mod.get('allowModDistribution') is False
+                if restricted and project_id != requested and str(project_id) in state['addons']:
+                    return  # Keep the installed dependency until its own update is requested.
+                file = client.latest(project_id, state['flavor'])
+                for dependency in file.get('dependencies', []):
                     if dependency['relationType'] == 3:
                         resolve(dependency['modId'])
+                plan[project_id] = (mod, file)
 
             resolve(requested)
             # Stage all dependencies before touching the live installation.
@@ -584,20 +621,16 @@ class Manager:
                     old = state['addons'].get(str(project_id))
                     if old and old['fileId'] > file['id']:
                         continue  # Never silently downgrade an installed release.
-                    if project_id == requested and local is not None and mod.get('allowModDistribution') is False:
-                        data = local
+                    if mod.get('allowModDistribution') is False:
+                        dependency = project_id != requested
+                        data = self.restricted_archive(mod, file, None if dependency else local, dependency)
                     else:
                         url = file.get('downloadUrl') or client.api(f'mods/{project_id}/files/{file["id"]}/download-url')
                         if not url:
                             raise UserError(f'Download unavailable for {mod["name"]}.')
                         data = client.request(url, MAX_DOWNLOAD)
-                    hashes = [h for h in file.get('hashes', []) if h['algo'] in (1, 2)]
-                    if not hashes or len(data) != file['fileLength']:
-                        raise UserError('Download size or checksum metadata is invalid.')
-                    for digest in hashes:
-                        algorithm = 'sha1' if digest['algo'] == 1 else 'md5'
-                        if hashlib.new(algorithm, data).hexdigest().lower() != digest['value'].lower():
-                            raise UserError('Addon checksum failed; no files were changed.')
+                        if len(data) != file['fileLength'] or not hashes_match(data, file):
+                            raise UserError(f'Download size or checksum failed for {mod["name"]}.')
                     target = stage / str(project_id)
                     folders = unpack(data, target)
                     for folder in folders:

@@ -28,7 +28,7 @@ class BackendTests(unittest.TestCase):
         self.wow = self.root / '_retail_'
         self.wow.mkdir()
         (self.wow / 'Wow.exe').touch()
-        self.manager = Manager(self.root / 'settings')
+        self.manager = Manager(self.root / 'settings', downloads=self.root / 'Downloads')
         atomic_json(self.manager.settings_file, {'path': str(self.wow), 'flavor': 517, 'key': 'test'})
         self.addons = self.manager.root()
         self.data = archive({'Example/Example.toc': '## Interface: 120000', 'Example/core.lua': 'new'})
@@ -78,11 +78,23 @@ class BackendTests(unittest.TestCase):
         self.manager.install(10)
         self.assertEqual(list(json.loads((self.addons / '.cursedeck.json').read_text())['addons']), ['10'])
 
-    def block_downloads(self, *ids):
+    repository = 'https://github.com/Author/WoWAddons'
+    asset = repository + '/releases/download/v2/Example-2.0.zip'
+    website = 'https://www.curseforge.com/wow/addons/example'
+
+    def block_downloads(self, *ids, source=''):
         names = {10: 'Example', 11: 'Library'}
-        self.client.api.side_effect = lambda route, **_: {
-            'id': int(route.split('/')[1]), 'name': names.get(int(route.split('/')[1]), 'Other'), 'gameId': 1,
-            'allowModDistribution': int(route.split('/')[1]) not in ids}
+        def project(identifier):
+            return {'id': identifier, 'name': names[identifier], 'gameId': 1,
+                    'allowModDistribution': identifier not in ids,
+                    'links': {'websiteUrl': self.website, 'sourceUrl': source}}
+
+        def api(route):
+            self.assertRegex(route, r'^mods/\d+$')  # Metadata only, never a restricted download URL.
+            return project(int(route.split('/')[1]))
+
+        self.client.api.side_effect = api
+        self.client.post.side_effect = lambda route, payload: [project(i) for i in payload['modIds']]
         self.file['fileName'] = 'Example-2.0.zip'
 
     def downloaded(self, data):
@@ -93,16 +105,155 @@ class BackendTests(unittest.TestCase):
 
     def test_blocked_addon_needs_a_downloaded_file(self):
         self.block_downloads(10)
-        with self.assertRaisesRegex(UserError, 'only be downloaded through CurseForge'):
+        with self.assertRaisesRegex(UserError, 'ZIP'):
             self.manager.install(10)
         self.client.request.assert_not_called()
 
     def test_verified_download_installs_without_network_download(self):
-        self.block_downloads(10)
-        result = self.manager.install(10, self.downloaded(self.data))
+        self.block_downloads(10, source=self.repository)
+        with patch('addon_releases.find_release_asset') as find_asset:
+            result = self.manager.install(10, self.downloaded(self.data))
+            find_asset.assert_not_called()
         self.client.request.assert_not_called()
         self.assertEqual(result['addons'][0]['fileId'], 20)
         self.assertEqual((self.addons / 'Example' / 'core.lua').read_text(), 'new')
+
+    def test_verified_zip_in_downloads_updates_without_github(self):
+        self.manager.install(10)
+        self.client.request.reset_mock()
+        self.block_downloads(10, source=self.repository)
+        self.file['id'] = 21
+        zip_path = Path(self.downloaded(self.data))
+        with patch('addon_releases.find_release_asset', side_effect=UserError('GitHub unavailable')) as find_asset, \
+                patch('addon_releases.download_release_asset') as download:
+            checked = self.manager.installed(check=True)['addons'][0]
+            self.assertTrue(checked['download']['localRelease'])
+            self.assertEqual(checked['fileId'], 20)
+            self.assertIsNone(checked['error'])
+            self.assertEqual(self.manager.install(10)['addons'][0]['fileId'], 21)
+            find_asset.assert_not_called()
+            download.assert_not_called()
+        self.assertEqual(zip_path.read_bytes(), self.data)
+        self.client.request.assert_not_called()
+
+    def test_cached_zip_is_rechecked_before_install(self):
+        self.manager.install(10)
+        self.client.request.reset_mock()
+        self.block_downloads(10, source=self.repository)
+        with patch('addon_releases.find_release_asset') as find_asset, \
+                patch('addon_releases.download_release_asset', return_value=self.data) as download:
+            self.file['id'] = 21
+            zip_path = Path(self.downloaded(self.data))
+            self.assertTrue(self.manager.installed(check=True)['addons'][0]['download']['localRelease'])
+            zip_path.unlink()
+            find_asset.return_value = ''
+            with self.assertRaises(UserError):
+                self.manager.install(10)
+            self.assertEqual(self.manager.installed()['addons'][0]['fileId'], 20)
+            download.assert_not_called()
+
+            zip_path.write_bytes(self.data)
+            self.assertTrue(self.manager.installed(check=True)['addons'][0]['download']['localRelease'])
+            zip_path.write_bytes(b'x' * len(self.data))
+            find_asset.return_value = self.asset
+            self.assertEqual(self.manager.install(10)['addons'][0]['fileId'], 21)
+            download.assert_called_once_with(self.asset, len(self.data))
+        self.client.request.assert_not_called()
+
+    def test_restricted_update_tracks_release_and_uses_current_author_asset(self):
+        self.manager.install(10)
+        self.client.request.reset_mock()
+        self.block_downloads(10, source=self.repository)
+        self.file.update(id=21, displayName='2.1', fileName='Example-2.1.zip', downloadUrl=None)
+        asset = self.repository + '/releases/download/v2.1/Example-2.1.zip'
+        with patch('addon_releases.find_release_asset', return_value=asset) as find_asset, \
+                patch('addon_releases.download_release_asset', return_value=self.data) as download:
+            checked = self.manager.installed(check=True)['addons'][0]
+            self.assertTrue(checked['blocked'])
+            self.assertTrue(checked['download']['authorRelease'])
+            self.assertEqual(checked['update'], '2.1')
+            self.assertEqual(checked['fileId'], 20)
+            find_asset.assert_called_once_with(self.repository, self.file)
+            download.assert_not_called()
+
+            self.file = dict(self.file, id=22, displayName='2.2', fileName='Example-2.2.zip')
+            self.client.latest.return_value = self.file
+            find_asset.reset_mock()
+            find_asset.return_value = self.repository + '/releases/download/v2.2/Example-2.2.zip'
+            installed = self.manager.install(10)['addons'][0]
+            find_asset.assert_called_once_with(self.repository, self.file)
+            download.assert_called_once_with(find_asset.return_value, self.file['fileLength'])
+            self.assertEqual((installed['fileId'], installed['version']), (22, '2.2'))
+            find_asset.reset_mock()
+            self.assertIsNone(self.manager.installed(check=True)['addons'][0]['update'])
+            find_asset.assert_not_called()
+        self.client.request.assert_not_called()
+
+    def test_install_observes_author_opt_out_after_update_check(self):
+        self.manager.install(10)
+        self.block_downloads()
+        self.file['id'] = 21
+        checked = self.manager.installed(check=True)['addons'][0]
+        self.assertTrue(checked['update'])
+        self.assertFalse(checked['blocked'])
+        self.client.request.reset_mock()
+        self.block_downloads(10)
+        with self.assertRaises(UserError):
+            self.manager.install(10)
+        self.client.request.assert_not_called()
+        self.assertEqual(self.manager.installed()['addons'][0]['fileId'], 20)
+
+    def test_lookup_failure_keeps_tracked_update_and_download_page(self):
+        self.manager.install(10)
+        self.block_downloads(10, source=self.repository)
+        self.file.update(id=21, displayName='2.1', fileName='Example-2.1.zip')
+        for outcome in ('', UserError('GitHub is unavailable')):
+            with self.subTest(outcome=outcome), patch('addon_releases.find_release_asset', side_effect=[outcome]):
+                item = self.manager.installed(check=True)['addons'][0]
+                self.assertTrue(item['blocked'])
+                self.assertEqual(item['update'], '2.1')
+                self.assertFalse(item['download'].get('authorRelease'))
+                self.assertEqual(item['download']['page'], self.website + '/download/21')
+                self.assertEqual(item['download']['fileName'], 'Example-2.1.zip')
+                if isinstance(outcome, UserError):
+                    self.assertIn(str(outcome), item['error'])
+
+    def test_author_asset_must_match_size_and_every_supported_checksum(self):
+        self.manager.install(10)
+        self.client.request.reset_mock()
+        self.block_downloads(10, source=self.repository)
+        self.file['id'] = 21
+        marker = self.addons / 'Example' / 'old.lua'
+        marker.write_text('old')
+        registry = self.addons / '.cursedeck.json'
+        before = registry.read_bytes()
+        with patch('addon_releases.find_release_asset', return_value=self.asset), \
+                patch('addon_releases.download_release_asset', return_value=self.data):
+            for metadata in ({'fileLength': len(self.data) + 1}, {'hashes': [
+                    self.file['hashes'][0], {'algo': 2, 'value': '0' * 32}]}):
+                with self.subTest(metadata=metadata), patch.dict(self.file, metadata), self.assertRaises(UserError):
+                    self.manager.install(10)
+                self.assertEqual(registry.read_bytes(), before)
+                self.assertEqual(marker.read_text(), 'old')
+        self.client.request.assert_not_called()
+
+    def test_missing_restricted_dependency_uses_its_own_author_release(self):
+        self.block_downloads(11, source=self.repository)
+        self.file['dependencies'] = [{'modId': 11, 'relationType': 3}]
+        library = archive({'Library/Library.toc': '## Title: Library'})
+        dependency = dict(self.file, id=30, fileName='Library.zip', downloadUrl=None, dependencies=[],
+                          fileLength=len(library), hashes=[{'algo': 1, 'value': hashlib.sha1(library).hexdigest()}])
+        self.client.latest.side_effect = lambda project, flavor: dependency if project == 11 else self.file
+        asset = self.repository + '/releases/download/v2/Library.zip'
+        with patch('addon_releases.find_release_asset', return_value=asset) as find_asset, \
+                patch('addon_releases.download_release_asset', return_value=library) as download:
+            result = self.manager.install(10)
+            find_asset.assert_called_once_with(self.repository, dependency)
+            download.assert_called_once_with(asset, len(library))
+        self.assertEqual(self.client.request.call_count, 1)
+        self.assertEqual(self.client.request.call_args.args[0], self.file['downloadUrl'])
+        self.assertEqual({a['id']: a['fileId'] for a in result['addons']}, {10: 20, 11: 30})
+        self.assertTrue((self.addons / 'Library' / 'Library.toc').is_file())
 
     def test_wrong_download_is_refused_and_changes_nothing(self):
         self.block_downloads(10)

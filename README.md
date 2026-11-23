@@ -48,7 +48,9 @@ Addons already present in your WoW folder show **Installed outside CurseDeck** i
 
 **My addons → Check for updates** also recognises existing addons. CurseDeck fingerprints each folder the way the CurseForge app does and asks CurseForge which release it is. An addon that matches a release exactly is listed as **Recognised on CurseForge** and can be updated like one CurseDeck installed: updating replaces its folders with the new release. Nothing on disk changes until you choose to update. Folders that were edited or come from elsewhere do not match and are left alone.
 
-Some authors only allow downloads through CurseForge's own app or website. For those addons, CurseDeck shows **Open download page** and **Install downloaded ZIP**: download the file from CurseForge, then choose it. CurseDeck installs it only if its size and checksums match the release CurseForge lists. If Steam's browser does not save the download, use a browser in Desktop Mode; the file can be anywhere on the Deck.
+For addons with third-party downloads disabled on CurseForge, **Check for updates** looks for the release ZIP in your Steam Deck user's `Downloads` folder. If it does not find a verified copy, CurseDeck looks for the same filename and size among the ten most recent releases of the GitHub repository linked from the addon's CurseForge project. **Update** and **Update all** use the matching ZIP automatically. CurseDeck verifies its size and checksums before replacing any folders and records the CurseForge file ID as usual.
+
+If a release still needs a manual download, expand the addon and select **Open download page**. Save the ZIP to `Downloads` under its original filename and check for updates again, or select **Install downloaded ZIP** to use a file saved elsewhere. If Steam's browser does not save the download, use a browser in Desktop Mode.
 
 ## Create your API key
 
@@ -61,8 +63,6 @@ CurseDeck uses your own personal CurseForge API key. It is free, and CurseDeck d
 Typing the key with the Deck's on-screen keyboard is error-prone, so save it in a text file instead: paste the key into a new file containing only the key, for example `curseforge-key.txt`, and copy the file to the Deck. Put it somewhere visible such as `Documents` or `Downloads`, since the file browser does not show hidden folders. Once setup is synced you can delete the file.
 
 Your key is saved locally in Decky's plugin settings and is only sent to `api.curseforge.com`. Never share it.
-
-Some authors disable third-party downloads for their addons. CurseDeck respects those settings: for those addons, download the file from CurseForge yourself and install it with **Install downloaded ZIP**.
 
 ## Install and update addons
 

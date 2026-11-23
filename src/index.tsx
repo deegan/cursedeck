@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { forgetAll, peek, remembered, usePersistentState } from './persistentState';
-import { Installed, Library, keepChecked } from './library';
+import { Installed, Library, canUpdate, keepChecked, syncSummary } from './library';
 import { ButtonItem, DialogButton, DropdownItem, Navigation, PanelSection, PanelSectionRow, TextField, ToggleField, staticClasses } from '@decky/ui';
 import { callable, definePlugin, toaster, openFilePicker, FileSelectionType } from '@decky/api';
 import { PluginUpdate, requestPluginUpdate, deckyInstallerBridge } from './pluginUpdates';
@@ -36,19 +36,10 @@ async function unwrap<T>(promise: Promise<Reply<T>>): Promise<T> {
   return reply.data;
 }
 
-function syncSummary(checked: Library): string {
-  const found = checked.addons.filter(a => a.update && !a.blocked).length;
-  const blockedUpdates = checked.addons.filter(a => a.update && a.blocked).length;
-  const failed = checked.addons.filter(a => a.error).length;
-  const outside = checked.localAddons?.length ?? checked.unmanaged.length;
-  const matched = checked.matching?.matched ?? 0;
-  const parts = [];
-  if (matched) parts.push(`Recognised ${matched} addon(s) on CurseForge.`);
-  if (!checked.addons.length) parts.push('No addons could be checked.');
-  else parts.push(`${found ? `${found} update(s) available` : 'Everything checked is up to date'} (${checked.addons.length} checked${failed ? `, ${failed} need attention` : ''}).`);
-  if (blockedUpdates) parts.push(`${blockedUpdates} more can only be updated through the CurseForge app.`);
-  if (outside) parts.push(`${outside} folder(s) were not recognised and cannot be updated here.`);
-  return parts.join(' ');
+function downloadInstructions(mod: Installed): string {
+  if (mod.download?.localRelease) return 'Update uses the verified ZIP in Downloads.';
+  if (mod.download?.authorRelease) return 'Update uses the author’s GitHub release. You can also install the CurseForge ZIP below.';
+  return `Save ${mod.download?.fileName || 'the release ZIP'} from CurseForge to Downloads and check for updates again, or choose the downloaded ZIP below.`;
 }
 
 function Content() {
@@ -93,7 +84,7 @@ function Content() {
       setSettings(saved);
       // Decky rebuilds this panel whenever Quick Access reopens; keep unsaved Setup choices.
       if (!remembered('path')) { setPath(saved.path); setFlavor(saved.flavor); }
-      if (saved.path) setLibrary(await unwrap(installed(false)));
+      if (saved.path) await refreshInstalled();
       else if (!remembered('tab')) { setTab('setup'); await scanInstallations(saved.path); }
     });
   }, []);
@@ -133,6 +124,10 @@ function Content() {
   }, [path, types]);
   async function browse(index: number) {
     setResults(await unwrap(search(query, index))); setOffset(index); setSearched(true);
+  }
+  async function refreshInstalled() {
+    const next = await unwrap(installed(false));
+    setLibrary(keepChecked(peek<Library>('library') ?? library, next));
   }
   async function add(id: number) {
     const next = await unwrap(install(id));
@@ -284,14 +279,14 @@ function Content() {
     </PanelSection>}
     {tab === 'installed' && <PanelSection title="My addons">
       {library.path && <div style={{overflowWrap:'anywhere', fontSize:12, color:'#b8bfc9', marginBottom:4}}>{library.path}</div>}
-      {button('Refresh installed addons', async () => setLibrary(await unwrap(installed(false))), !settings?.path)}
+      {button('Refresh installed addons', refreshInstalled, !settings?.path)}
       {button('Check for updates', async () => {
         const checked = await unwrap(installed(true));
         setLibrary(checked);
         setNotice(syncSummary(checked));
       }, !settings?.path || !settings?.hasKey || !settings?.flavor)}
       {button('Update all', async () => {
-        const updates = library.addons.filter(a => a.update && !a.blocked);
+        const updates = library.addons.filter(canUpdate);
         const failures: string[] = [];
         for (const mod of updates) {
           try { await unwrap(install(mod.id)); }
@@ -300,17 +295,16 @@ function Content() {
         setLibrary(await unwrap(installed(true)));
         if (failures.length) throw new Error(failures.join('\n'));
         setNotice(`${updates.length} addon(s) updated.`);
-      }, !library.addons.some(a => a.update && !a.blocked))}
+      }, !library.addons.some(canUpdate))}
       {!library.addons.length && !library.unmanaged.length && <p>{settings?.path ? 'No addon folders found in this installation. Check the scanned path or choose another WoW edition in Setup.' : 'Choose your WoW installation in Setup, then save the folder to list its addons.'}</p>}
       {library.addons.map(mod => <AddonCard key={mod.id} name={mod.name} icon={mod.logo || ''} version={mod.version}
-        status={[mod.missing && 'Files missing', mod.error && 'Needs attention', mod.update && (mod.blocked ? 'Update in CurseForge app' : 'Update available')].filter(Boolean).join(' · ')}
+        status={[mod.missing && 'Files missing', mod.error && 'Needs attention', mod.update && (canUpdate(mod) ? 'Update available' : 'Manual ZIP update')].filter(Boolean).join(' · ')}
         warning={mod.missing || !!mod.error}
-        action={mod.update && !mod.blocked ? addonAction('Update', mod.id) : undefined}>
+        action={canUpdate(mod) ? addonAction('Update', mod.id) : undefined}>
         <div>{mod.adopted ? 'Recognised on CurseForge; updates through CurseDeck replace its folders' : 'Managed by CurseDeck'}</div>
         {mod.update && <div style={{marginTop:6}}>Available: {mod.update}</div>}
-        {mod.blocked && <div style={{marginTop:6}}>The author only allows downloads through CurseForge's own app or website, so CurseDeck cannot download it.</div>}
         {mod.blocked && mod.update && <>
-          <div style={{marginTop:6}}>Download {mod.download?.fileName || 'the release'} from CurseForge, then choose it here. CurseDeck checks it is exactly that release before installing.</div>
+          <div style={{marginTop:6}}>{downloadInstructions(mod)}</div>
           {mod.download?.page && <>
             <div style={{marginTop:6, overflowWrap:'anywhere', fontSize:12}}>{mod.download.page}</div>
             {smallButton('Open download page', async () => Navigation.NavigateToExternalWeb(mod.download!.page))}

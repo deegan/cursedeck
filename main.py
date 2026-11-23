@@ -13,7 +13,7 @@ from updates import ReleaseUpdater
 
 class Plugin:
     async def _main(self):
-        self.manager = Manager(decky.DECKY_PLUGIN_SETTINGS_DIR)
+        self.manager = Manager(decky.DECKY_PLUGIN_SETTINGS_DIR, downloads=Path(decky.DECKY_USER_HOME) / 'Downloads')
         version = json.loads((Path(__file__).parent / 'package.json').read_text())['version']
         self.updater = ReleaseUpdater(decky.DECKY_PLUGIN_SETTINGS_DIR, version)
         self.operation_lock = threading.RLock()
