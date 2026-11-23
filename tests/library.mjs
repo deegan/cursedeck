@@ -16,10 +16,11 @@ assert.equal(merged.addons[0].blocked, true, 'the CurseForge download restrictio
 assert.equal(merged.addons[0].download, undefined, 'the previous release source is discarded');
 assert.deepEqual(merged.addons[1].download, previous.addons[1].download, 'untouched addons keep their download info');
 assert.equal(merged.matching.matched, 2);
-assert.deepEqual(previous.addons.filter(canUpdate).map(a => a.id), [2], 'Update all includes the author release');
+assert.deepEqual(previous.addons.filter(canUpdate).map(a => a.id), [1, 2], 'Update all includes both restricted addons before source lookup');
 assert.equal(canUpdate({...previous.addons[1], update:null}), false);
 assert.equal(canUpdate({...previous.addons[0], blocked:false}), true);
-assert.match(syncSummary(previous), /2 updates available.*1 requires a manual ZIP download/);
+assert.match(syncSummary(previous), /2 updates available/);
+assert.doesNotMatch(syncSummary(previous), /manual ZIP/);
 assert.match(syncSummary({...previous, addons:[previous.addons[0]]}), /1 update available/);
 assert.doesNotMatch(syncSummary(merged), /manual ZIP/);
 
@@ -30,9 +31,7 @@ const localSummary = syncSummary({...previous, addons:[local]});
 assert.match(localSummary, /1 update available/);
 assert.doesNotMatch(localSummary, /manual ZIP/);
 
-const rechecked = {...previous, addons: previous.addons.map(addon => ({
-  ...addon, download: {...addon.download, authorRelease: !addon.download.authorRelease}
-}))};
-assert.deepEqual(keepChecked(previous, rechecked).addons.filter(canUpdate).map(a => a.id), [1], 'a fresh check replaces availability');
+const rechecked = {...previous, addons: previous.addons.map(addon => ({...addon, update:null}))};
+assert.deepEqual(keepChecked(previous, rechecked).addons.filter(canUpdate), [], 'a fresh check replaces availability');
 assert.deepEqual(keepChecked(previous, {...next, path:'/other/AddOns'}).addons.filter(canUpdate), []);
 console.log('Library tests passed.');

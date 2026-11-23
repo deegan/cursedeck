@@ -491,8 +491,6 @@ class Manager:
         return summary
 
     def installed(self, check=False):
-        from addon_releases import find_release_asset, local_release_zip
-
         with self.lock:
             root, state = self.state()
             matching = None
@@ -529,10 +527,6 @@ class Manager:
                                 links = blocked[mod['id']]
                                 item['download'] = {'fileName': str(latest.get('fileName') or ''),
                                                     'page': download_page(links.get('websiteUrl'), latest['id'])}
-                                if local_release_zip(self.downloads, latest) is not None:
-                                    item['download']['localRelease'] = True
-                                elif find_release_asset(links.get('sourceUrl'), latest):
-                                    item['download']['authorRelease'] = True
                     except UserError as error:
                         item['error'] = str(error)
                 result.append(item)
@@ -547,30 +541,45 @@ class Manager:
             return library
 
     def restricted_archive(self, mod, file, selected, dependency):
-        from addon_releases import download_release_asset, find_release_asset, local_release_zip
+        from addon_releases import (download_release_asset, find_release_asset, github_repository,
+                                    local_release_zip, wago_release_zip)
 
         if selected is not None:
             if len(selected) != file['fileLength'] or not hashes_match(selected, file):
                 raise UserError(f'That ZIP is not {file.get("fileName") or "the expected release"}. '
-                                'Download the file from the link shown and choose it again.')
+                                'Choose the ZIP for this CurseForge release or use Update to fetch it.')
             return selected
         data = local_release_zip(self.downloads, file)
         if data is not None:
             return data
-        asset = find_release_asset((mod.get('links') or {}).get('sourceUrl'), file)
-        if not asset:
-            reason = f'{mod["name"]} is required.' if dependency else f'No matching archive found for {mod["name"]}.'
-            raise UserError(f'{reason} Save the release ZIP from CurseForge to Downloads and try again.')
-        data = download_release_asset(asset, file['fileLength'])
-        if len(data) != file['fileLength'] or not hashes_match(data, file):
-            raise UserError(f'Download size or checksum failed for {mod["name"]}.')
-        return data
+        links = mod.get('links') or {}
+        repositories = dict.fromkeys(github_repository(links.get(key)) for key in ('sourceUrl', 'issuesUrl', 'wikiUrl'))
+        errors = []
+        for repo in filter(None, repositories):
+            try:
+                asset = find_release_asset('https://github.com/' + repo, file)
+                if asset:
+                    data = download_release_asset(asset, file['fileLength'])
+                    if len(data) == file['fileLength'] and hashes_match(data, file):
+                        return data
+                    errors.append('GitHub checksum or size mismatch.')
+            except UserError as error:
+                errors.append(str(error))
+        try:
+            data = wago_release_zip(mod.get('slug'), file)
+            if data is not None:
+                return data
+        except UserError as error:
+            errors.append(str(error))
+        reason = f'{mod["name"]} is required. ' if dependency else ''
+        raise UserError(f'{reason}No verified ZIP available for {mod["name"]} {file["displayName"]}. '
+                        + ' '.join(errors or ['Check for updates again later.']))
 
     def install(self, mod_id, downloaded=None):
         """Install a project and its required dependencies.
 
-        Restricted projects use a local ZIP or an author-published GitHub release
-        asset. CurseForge identifies the exact build in both cases.
+        Restricted projects use a local ZIP or a verified GitHub or Wago release.
+        CurseForge identifies the exact build for each source.
         """
         local = None
         if downloaded:

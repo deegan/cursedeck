@@ -3,7 +3,7 @@ export type Installed = { id: number; name: string; logo?: string; version: stri
 export type Library = { addons: Installed[]; unmanaged: string[]; path?: string; matching?: {matched: number; unmatched: string[]; modified: string[]}; localAddons?: {folder: string; name: string; version: string | null; notes: string; error: string | null}[] };
 
 export function canUpdate(addon: Installed): boolean {
-  return !!addon.update && (!addon.blocked || addon.download?.localRelease === true || addon.download?.authorRelease === true);
+  return !!addon.update;
 }
 
 // A local refresh or install returns a plain listing. Keep checked results for unchanged releases.
@@ -20,7 +20,6 @@ export function keepChecked(previous: Library, next: Library): Library {
 
 export function syncSummary(checked: Library): string {
   const found = checked.addons.filter(a => a.update).length;
-  const manualUpdates = found - checked.addons.filter(canUpdate).length;
   const failed = checked.addons.filter(a => a.error).length;
   const outside = checked.localAddons?.length ?? checked.unmanaged.length;
   const matched = checked.matching?.matched ?? 0;
@@ -30,7 +29,6 @@ export function syncSummary(checked: Library): string {
   if (found) outcome = `${found} update${found === 1 ? '' : 's'} available`;
   if (!checked.addons.length) parts.push('No addons could be checked.');
   else parts.push(`${outcome} (${checked.addons.length} checked${failed ? `, ${failed} need attention` : ''}).`);
-  if (manualUpdates) parts.push(`${manualUpdates} require${manualUpdates === 1 ? 's' : ''} a manual ZIP download.`);
   if (outside) parts.push(`${outside} folder(s) were not recognised and cannot be updated here.`);
   return parts.join(' ');
 }

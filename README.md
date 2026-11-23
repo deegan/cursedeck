@@ -48,9 +48,9 @@ Addons already present in your WoW folder show **Installed outside CurseDeck** i
 
 **My addons → Check for updates** also recognises existing addons. CurseDeck fingerprints each folder the way the CurseForge app does and asks CurseForge which release it is. An addon that matches a release exactly is listed as **Recognised on CurseForge** and can be updated like one CurseDeck installed: updating replaces its folders with the new release. Nothing on disk changes until you choose to update. Folders that were edited or come from elsewhere do not match and are left alone.
 
-For addons with third-party downloads disabled on CurseForge, **Check for updates** looks for the release ZIP in your Steam Deck user's `Downloads` folder. If it does not find a verified copy, CurseDeck looks for the same filename and size among the ten most recent releases of the GitHub repository linked from the addon's CurseForge project. **Update** and **Update all** use the matching ZIP automatically. CurseDeck verifies its size and checksums before replacing any folders and records the CurseForge file ID as usual.
+For addons such as Baganator and Syndicator that disable third-party downloads on CurseForge, use **Update** or **Update all** as usual. CurseDeck checks for a matching ZIP in Downloads, in the project's linked GitHub releases, and in its recent stable releases on Wago. It verifies the archive size and checksums against the CurseForge release for your WoW edition before replacing addon folders and recording the new CurseForge file ID.
 
-If a release still needs a manual download, expand the addon and select **Open download page**. Save the ZIP to `Downloads` under its original filename and check for updates again, or select **Install downloaded ZIP** to use a file saved elsewhere. If Steam's browser does not save the download, use a browser in Desktop Mode.
+If none of those sources has the matching ZIP yet, the update stays available to retry. If you already have the ZIP elsewhere, you can select **Install an existing ZIP** in the addon's details.
 
 ## Create your API key
 

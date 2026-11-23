@@ -36,12 +36,6 @@ async function unwrap<T>(promise: Promise<Reply<T>>): Promise<T> {
   return reply.data;
 }
 
-function downloadInstructions(mod: Installed): string {
-  if (mod.download?.localRelease) return 'Update uses the verified ZIP in Downloads.';
-  if (mod.download?.authorRelease) return 'Update uses the author’s GitHub release. You can also install the CurseForge ZIP below.';
-  return `Save ${mod.download?.fileName || 'the release ZIP'} from CurseForge to Downloads and check for updates again, or choose the downloaded ZIP below.`;
-}
-
 function Content() {
   const [pluginUpdate, setPluginUpdate] = useState<PluginUpdate>();
   const [updateError, setUpdateError] = useState('');
@@ -298,19 +292,12 @@ function Content() {
       }, !library.addons.some(canUpdate))}
       {!library.addons.length && !library.unmanaged.length && <p>{settings?.path ? 'No addon folders found in this installation. Check the scanned path or choose another WoW edition in Setup.' : 'Choose your WoW installation in Setup, then save the folder to list its addons.'}</p>}
       {library.addons.map(mod => <AddonCard key={mod.id} name={mod.name} icon={mod.logo || ''} version={mod.version}
-        status={[mod.missing && 'Files missing', mod.error && 'Needs attention', mod.update && (canUpdate(mod) ? 'Update available' : 'Manual ZIP update')].filter(Boolean).join(' · ')}
+        status={[mod.missing && 'Files missing', mod.error && 'Needs attention', mod.update && 'Update available'].filter(Boolean).join(' · ')}
         warning={mod.missing || !!mod.error}
         action={canUpdate(mod) ? addonAction('Update', mod.id) : undefined}>
         <div>{mod.adopted ? 'Recognised on CurseForge; updates through CurseDeck replace its folders' : 'Managed by CurseDeck'}</div>
         {mod.update && <div style={{marginTop:6}}>Available: {mod.update}</div>}
-        {mod.blocked && mod.update && <>
-          <div style={{marginTop:6}}>{downloadInstructions(mod)}</div>
-          {mod.download?.page && <>
-            <div style={{marginTop:6, overflowWrap:'anywhere', fontSize:12}}>{mod.download.page}</div>
-            {smallButton('Open download page', async () => Navigation.NavigateToExternalWeb(mod.download!.page))}
-          </>}
-          {smallButton('Install downloaded ZIP', () => installDownloaded(mod))}
-        </>}
+        {mod.blocked && mod.update && smallButton('Install an existing ZIP', () => installDownloaded(mod))}
         {mod.error && <div style={{marginTop:6, color:'#ffb4a9'}}>{mod.error}</div>}
         {!mod.update && !mod.blocked && <div style={{marginTop:8}}>{addonAction('Repair / reinstall', mod.id)}</div>}
       </AddonCard>)}

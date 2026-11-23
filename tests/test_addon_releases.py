@@ -1,4 +1,5 @@
 import hashlib
+import html
 import io
 import json
 import os
@@ -9,7 +10,7 @@ import urllib.error
 import urllib.request
 from unittest.mock import MagicMock, patch
 
-from addon_releases import ReleaseRedirect, download_release_asset, find_release_asset, github_repository, local_release_zip
+from addon_releases import ReleaseRedirect, download_release_asset, find_release_asset, github_repository, local_release_zip, wago_release_zip
 from backend import MAX_DOWNLOAD, UserError, hashes_match, release_hashes
 
 
@@ -23,7 +24,7 @@ class AddonReleaseTests(unittest.TestCase):
         self.release = {'draft': False, 'prerelease': False, 'assets': [self.asset]}
 
     def test_only_declared_public_repository(self):
-        for suffix in ('', '/', '.git', '/tree/main'):
+        for suffix in ('', '/', '.git', '/tree/main', '/issues', '/wiki'):
             self.assertEqual(github_repository(self.source + suffix), 'Author/Example')
         for source in (None, 'http://github.com/Author/Example', 'https://github.com.evil/Author/Example',
                        'https://user@github.com/Author/Example', 'https://github.com:bad/Author/Example',
@@ -93,6 +94,57 @@ class AddonReleaseTests(unittest.TestCase):
                                 (metadata_req, cdn), (metadata_req, 'https://api.github.com/user')]:
             with self.subTest(target=target), self.assertRaises(UserError):
                 redirect.redirect_request(request, None, 302, '', {}, target)
+
+
+class WagoReleaseTests(unittest.TestCase):
+    url = 'https://addons.wago.io/download/rQPkX1R6?expires=1&signature=example'
+
+    def setUp(self):
+        self.data = b'example release'
+        self.file = {'fileName': 'Baganator-868.zip', 'fileLength': len(self.data),
+                     'hashes': [{'algo': 1, 'value': hashlib.sha1(self.data).hexdigest()},
+                                {'algo': 2, 'value': hashlib.md5(self.data).hexdigest()}]}
+        self.release = {'stability': 'stable', 'label': '868', 'size': len(self.data), 'download_link': self.url}
+
+    def page(self, *releases, slug='baganator'):
+        payload = {'props': {'addon': {'slug': slug}, 'releases': {'data': releases}}}
+        return ('<div id="app" data-page="' + html.escape(json.dumps(payload)) + '"></div>').encode()
+
+    def test_signed_link_and_verified_bytes(self):
+        with patch('addon_releases._read', side_effect=[self.page(self.release), self.data]) as read:
+            self.assertEqual(wago_release_zip('baganator', self.file), self.data)
+            self.assertEqual(read.call_args_list[0].args[0], 'https://addons.wago.io/addons/baganator/versions')
+            self.assertEqual(read.call_args.args, (self.url, len(self.data)))
+        self.file['hashes'][1]['value'] = '0' * 32
+        with patch('addon_releases._read', side_effect=[self.page(self.release), self.data]):
+            with self.assertRaisesRegex(UserError, 'checksum'):
+                wago_release_zip('baganator', self.file)
+
+    def test_listing_identity_size_stability_and_download_origin(self):
+        for page in (None, self.page(self.release, slug='other'), self.page(dict(self.release, size=1)),
+                     self.page(dict(self.release, stability='alpha')),
+                     self.page(dict(self.release, download_link='https://other.example/download/abc'))):
+            with patch('addon_releases._read', return_value=page) as read:
+                self.assertIsNone(wago_release_zip('baganator', self.file))
+                self.assertEqual(read.call_count, 1)
+        with patch('addon_releases._read') as read:
+            self.assertIsNone(wago_release_zip('../baganator', self.file))
+            self.assertIsNone(wago_release_zip('baganator', dict(self.file, hashes=[])))
+            read.assert_not_called()
+        with patch('addon_releases._read', return_value=b'<html>hello</html>'):
+            with self.assertRaisesRegex(UserError, 'Wago'):
+                wago_release_zip('baganator', self.file)
+
+    def test_wago_redirects(self):
+        handler = ReleaseRedirect()
+        listing = 'https://addons.wago.io/addons/baganator/versions'
+        cdn = 'https://cdn.wago.io/releases/test.zip'
+        for start, end in ((listing, listing + '?stability=stable'), (self.url, cdn)):
+            req = urllib.request.Request(start)
+            self.assertEqual(handler.redirect_request(req, None, 302, '', {}, end).full_url, end)
+        for start, end in ((listing, cdn), (self.url, 'https://other.example/test.zip')):
+            with self.assertRaises(UserError):
+                handler.redirect_request(urllib.request.Request(start), None, 302, '', {}, end)
 
 
 class LocalReleaseTests(unittest.TestCase):

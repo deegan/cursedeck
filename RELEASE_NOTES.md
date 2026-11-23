@@ -1,3 +1,1 @@
-Update and Update all can now install addons with third-party CurseForge downloads disabled when the author publishes the same ZIP on GitHub or the ZIP is already in your Steam Deck’s Downloads folder.
-
-CurseDeck verifies the ZIP against the CurseForge release before installing it and continues tracking the installed version. If a release still needs a manual download, save it to Downloads with its original filename and check for updates again.
+Update and Update all now include addons that disable third-party CurseForge downloads. CurseDeck can fetch Baganator and Syndicator from their author’s Wago releases and verify the ZIP against the CurseForge file for your WoW edition. If a download fails verification, the installed files and recorded version stay in place.

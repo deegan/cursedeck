@@ -127,7 +127,7 @@ class BackendTests(unittest.TestCase):
         with patch('addon_releases.find_release_asset', side_effect=UserError('GitHub unavailable')) as find_asset, \
                 patch('addon_releases.download_release_asset') as download:
             checked = self.manager.installed(check=True)['addons'][0]
-            self.assertTrue(checked['download']['localRelease'])
+            self.assertEqual(checked['update'], '2.0')
             self.assertEqual(checked['fileId'], 20)
             self.assertIsNone(checked['error'])
             self.assertEqual(self.manager.install(10)['addons'][0]['fileId'], 21)
@@ -144,7 +144,7 @@ class BackendTests(unittest.TestCase):
                 patch('addon_releases.download_release_asset', return_value=self.data) as download:
             self.file['id'] = 21
             zip_path = Path(self.downloaded(self.data))
-            self.assertTrue(self.manager.installed(check=True)['addons'][0]['download']['localRelease'])
+            self.assertIsNotNone(self.manager.installed(check=True)['addons'][0]['update'])
             zip_path.unlink()
             find_asset.return_value = ''
             with self.assertRaises(UserError):
@@ -153,7 +153,7 @@ class BackendTests(unittest.TestCase):
             download.assert_not_called()
 
             zip_path.write_bytes(self.data)
-            self.assertTrue(self.manager.installed(check=True)['addons'][0]['download']['localRelease'])
+            self.assertIsNotNone(self.manager.installed(check=True)['addons'][0]['update'])
             zip_path.write_bytes(b'x' * len(self.data))
             find_asset.return_value = self.asset
             self.assertEqual(self.manager.install(10)['addons'][0]['fileId'], 21)
@@ -170,10 +170,9 @@ class BackendTests(unittest.TestCase):
                 patch('addon_releases.download_release_asset', return_value=self.data) as download:
             checked = self.manager.installed(check=True)['addons'][0]
             self.assertTrue(checked['blocked'])
-            self.assertTrue(checked['download']['authorRelease'])
             self.assertEqual(checked['update'], '2.1')
             self.assertEqual(checked['fileId'], 20)
-            find_asset.assert_called_once_with(self.repository, self.file)
+            find_asset.assert_not_called()
             download.assert_not_called()
 
             self.file = dict(self.file, id=22, displayName='2.2', fileName='Example-2.2.zip')
@@ -203,20 +202,42 @@ class BackendTests(unittest.TestCase):
         self.client.request.assert_not_called()
         self.assertEqual(self.manager.installed()['addons'][0]['fileId'], 20)
 
-    def test_lookup_failure_keeps_tracked_update_and_download_page(self):
-        self.manager.install(10)
-        self.block_downloads(10, source=self.repository)
-        self.file.update(id=21, displayName='2.1', fileName='Example-2.1.zip')
-        for outcome in ('', UserError('GitHub is unavailable')):
-            with self.subTest(outcome=outcome), patch('addon_releases.find_release_asset', side_effect=[outcome]):
-                item = self.manager.installed(check=True)['addons'][0]
-                self.assertTrue(item['blocked'])
-                self.assertEqual(item['update'], '2.1')
-                self.assertFalse(item['download'].get('authorRelease'))
-                self.assertEqual(item['download']['page'], self.website + '/download/21')
-                self.assertEqual(item['download']['fileName'], 'Example-2.1.zip')
-                if isinstance(outcome, UserError):
-                    self.assertIn(str(outcome), item['error'])
+    def test_wago_updates_both_restricted_projects_and_tracks_curseforge_ids(self):
+        projects = {914482: 'Baganator', 988370: 'Syndicator'}
+        archives = {i: archive({f'{name}/{name}.toc': '## Title: ' + name}) for i, name in projects.items()}
+        files = {i: dict(self.file, id=i + 1, displayName='2', fileName=name + '-2.zip',
+                         downloadUrl=None, fileLength=len(archives[i]),
+                         hashes=[{'algo': 1, 'value': hashlib.sha1(archives[i]).hexdigest()}])
+                 for i, name in projects.items()}
+        registry = {}
+        for i, name in projects.items():
+            (self.addons / name).mkdir()
+            (self.addons / name / (name + '.toc')).write_text('old')
+            registry[str(i)] = {'id': i, 'name': name, 'version': '1', 'fileId': i, 'folders': [name]}
+        atomic_json(self.addons / '.cursedeck.json', {'flavor': 517, 'addons': registry})
+        def project(i):
+            return {'id': i, 'gameId': 1, 'slug': projects[i].lower(), 'name': projects[i],
+                    'allowModDistribution': False, 'links': {'wikiUrl': self.repository + '/wiki'} if i == 988370 else {}}
+        self.client.api.side_effect = lambda route: project(int(route.split('/')[1]))
+        self.client.post.side_effect = lambda route, payload: [project(i) for i in payload['modIds']]
+        self.client.latest.side_effect = lambda i, flavor: files[i]
+        files[914482]['dependencies'] = [{'relationType': 3, 'modId': 988370}]
+        def wago(slug, file):
+            i = file['id'] - 1
+            self.assertEqual(slug, projects[i].lower())
+            return archives[i]
+        with patch('addon_releases.find_release_asset', side_effect=UserError('GitHub unavailable')), \
+                patch('addon_releases.wago_release_zip', side_effect=wago) as source:
+            updates = self.manager.installed(check=True)['addons']
+            source.assert_not_called()
+            for mod in updates:
+                self.assertEqual(mod['update'], '2')
+                self.manager.install(mod['id'])
+            self.assertEqual(source.call_count, 2)
+        for mod in self.manager.installed(check=True)['addons']:
+            self.assertIsNone(mod['update'])
+            self.assertEqual((mod['fileId'], mod['version']), (files[mod['id']]['id'], '2'))
+        self.client.request.assert_not_called()
 
     def test_author_asset_must_match_size_and_every_supported_checksum(self):
         self.manager.install(10)
