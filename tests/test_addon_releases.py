@@ -4,6 +4,8 @@ import io
 import json
 import os
 from pathlib import Path
+import runpy
+import sys
 import tempfile
 import unittest
 import urllib.error
@@ -119,6 +121,10 @@ class WagoReleaseTests(unittest.TestCase):
         with patch('addon_releases._read', side_effect=[self.page(self.release), self.data]):
             with self.assertRaisesRegex(UserError, 'checksum'):
                 wago_release_zip('baganator', self.file)
+
+    def test_release_sources_import_in_decky_runtime_without_html_parser(self):
+        with patch.dict(sys.modules, {'html.parser': None}):
+            runpy.run_module('addon_releases')
 
     def test_listing_identity_size_stability_and_download_origin(self):
         for page in (None, self.page(self.release, slug='other'), self.page(dict(self.release, size=1)),

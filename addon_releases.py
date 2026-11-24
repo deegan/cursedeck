@@ -1,5 +1,5 @@
 """Find the CurseForge release in Downloads or a matching GitHub or Wago release."""
-from html.parser import HTMLParser
+from html import unescape
 import http.client
 import json
 import os
@@ -167,27 +167,20 @@ def download_release_asset(url, limit):
     return _read(url, min(limit, MAX_DOWNLOAD))
 
 
-class _WagoPage(HTMLParser):
-    """Wago embeds its public release listing in the page's data-page attribute."""
-    page = None
-
-    def handle_starttag(self, tag, attrs):
-        if tag == 'div':
-            value = dict(attrs).get('data-page')
-            if value:
-                self.page = json.loads(value)
-
-
 def wago_release_zip(slug, file):
     if not isinstance(slug, str) or not re.fullmatch(r'[a-z0-9-]+', slug) or not _usable_archive(file):
         return None
     data = _read(f'https://addons.wago.io/addons/{slug}/versions', 4 * 1024 * 1024, metadata=True, service='Wago')
     if data is None:
         return None
-    page = _WagoPage()
     try:
-        page.feed(data.decode('utf-8'))
-        props = page.page['props']
+        # Decky bundles html.unescape but omits html.parser. Wago embeds the
+        # JSON listing in one quoted data-page attribute on its app div.
+        match = re.search(r"""<div\b[^<>]*?\sdata-page\s*=\s*(?:"([^"]*)"|'([^']*)')""",
+                          data.decode('utf-8'), re.IGNORECASE)
+        if not match:
+            raise ValueError()
+        props = json.loads(unescape(match[1] or match[2] or ''))['props']
         if props['addon']['slug'] != slug:
             return None
         releases = props['releases']['data']
